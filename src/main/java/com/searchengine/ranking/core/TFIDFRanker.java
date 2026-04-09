@@ -52,7 +52,7 @@ public class TFIDFRanker implements Ranker {
     private double computeTF(int tf) {
 
         /*
-         SEIR recommends log normalization:
+         log normalization:
 
          tf = 1 + log(tf)
 
