@@ -38,6 +38,6 @@ public class RankedQueryExecutorTest {
 
         assertEquals(1, result.getResults().size());
 
-        assertEquals(1, result.getResults().getFirst().getDocId());
+        assertEquals(1, result.getResults().get(0).getDocId());
     }
 }

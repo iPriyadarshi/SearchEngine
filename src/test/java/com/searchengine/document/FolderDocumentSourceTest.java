@@ -27,6 +27,6 @@ public class FolderDocumentSourceTest {
 
         assertEquals(1, docs.size());
 
-        assertEquals("hello world", docs.getFirst().getContent());
+        assertEquals("hello world", docs.get(0).getContent());
     }
 }
