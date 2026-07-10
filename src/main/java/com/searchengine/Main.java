@@ -13,6 +13,7 @@ import com.searchengine.index.core.MemoryInvertedIndex;
 import com.searchengine.parser.core.DefaultParser;
 import com.searchengine.parser.filter.LengthFilter;
 import com.searchengine.parser.filter.LowercaseFilter;
+import com.searchengine.parser.filter.PorterStemmerFilter;
 import com.searchengine.parser.filter.StopwordFilter;
 import com.searchengine.parser.tokenizer.RegexTokenizer;
 import com.searchengine.query.result.SearchResult;
@@ -70,7 +71,8 @@ public class Main {
         List<TokenFilter> filters = List.of(
                 new LowercaseFilter(),
                 new StopwordFilter(),
-                new LengthFilter(2));
+                new LengthFilter(2),
+                new PorterStemmerFilter());
 
         Parser parser = new DefaultParser(tokenizer, filters);
 
