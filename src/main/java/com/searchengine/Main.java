@@ -8,7 +8,6 @@ import com.searchengine.api.Tokenizer;
 import com.searchengine.api.DocumentSource;
 import com.searchengine.crawler.JsoupPageFetcher;
 import com.searchengine.crawler.WebCrawler;
-import com.searchengine.document.model.Document;
 import com.searchengine.document.source.FolderDocumentSource;
 import com.searchengine.document.source.HtmlDocumentSource;
 import com.searchengine.engine.ResultFormatter;
@@ -120,9 +119,9 @@ public class Main {
 
             httpServer.start();
 
-            System.out.println("Search API listening on http://localhost:" + httpServer.getPort());
+            System.out.println("Web UI + API at http://localhost:" + httpServer.getPort() + "/");
 
-            System.out.println("Try: /search?q=..., /phrase?q=..., /bool?q=..., /health");
+            System.out.println("API: /search?q=..., /phrase?q=..., /bool?q=..., /health");
 
             Thread.currentThread().join();
 

@@ -78,6 +78,29 @@ public class SearchHttpServerTest {
     }
 
     @Test
+    void rootServesWebUi() throws Exception {
+
+        HttpResponse<String> response = get("/");
+
+        assertEquals(200, response.statusCode());
+
+        assertTrue(response.headers().firstValue("Content-Type").orElse("").contains("text/html"));
+
+        assertTrue(response.body().contains("<title>Search Engine</title>"));
+
+        // the UI must reference the API endpoints it calls
+        assertTrue(response.body().contains("/search") || response.body().contains("buildUrl"));
+    }
+
+    @Test
+    void unknownPathReturns404() throws Exception {
+
+        HttpResponse<String> response = get("/does-not-exist");
+
+        assertEquals(404, response.statusCode());
+    }
+
+    @Test
     void healthEndpointReportsOk() throws Exception {
 
         HttpResponse<String> response = get("/health");

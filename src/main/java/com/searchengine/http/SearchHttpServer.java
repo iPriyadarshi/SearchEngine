@@ -14,6 +14,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
@@ -27,13 +28,14 @@ import java.util.Map;
  * framework dependency).
  *
  * <pre>
+ * GET /                                                  responsive web UI
  * GET /search?q=...&amp;ranker=tfidf|cosine|bm25&amp;limit=N   ranked search
  * GET /phrase?q=...&amp;limit=N                             phrase search
  * GET /bool?q=... AND ...                                boolean search
  * GET /health                                            liveness probe
  * </pre>
  *
- * All endpoints return JSON.
+ * The search endpoints return JSON; the root serves the single-page UI.
  */
 public class SearchHttpServer {
 
@@ -73,6 +75,9 @@ public class SearchHttpServer {
 
         server.createContext("/health", this::handleHealth);
 
+        // Fallback context: serves the web UI at "/" and 404s everything else.
+        server.createContext("/", this::handleRoot);
+
         server.setExecutor(null);
     }
 
@@ -94,6 +99,37 @@ public class SearchHttpServer {
     private void handleHealth(HttpExchange exchange) throws IOException {
 
         respond(exchange, 200, "{\"status\":\"ok\",\"documents\":" + engine.getDocumentCount() + "}");
+    }
+
+    private void handleRoot(HttpExchange exchange) throws IOException {
+
+        String path = exchange.getRequestURI().getPath();
+
+        if (path.equals("/") || path.equals("/index.html") || path.equals("/ui")) {
+
+            byte[] ui = readResource("/web/index.html");
+
+            if (ui == null) {
+
+                respond(exchange, 500, error("web UI resource not found"));
+
+                return;
+            }
+
+            respondBytes(exchange, 200, "text/html; charset=utf-8", ui);
+
+            return;
+        }
+
+        respond(exchange, 404, error("not found: " + path));
+    }
+
+    private byte[] readResource(String resource) throws IOException {
+
+        try (InputStream in = getClass().getResourceAsStream(resource)) {
+
+            return in == null ? null : in.readAllBytes();
+        }
     }
 
     private void handleSearch(HttpExchange exchange) throws IOException {
@@ -243,9 +279,14 @@ public class SearchHttpServer {
 
     private void respond(HttpExchange exchange, int status, String body) throws IOException {
 
-        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        respondBytes(exchange, status, "application/json; charset=utf-8",
+                body.getBytes(StandardCharsets.UTF_8));
+    }
 
-        exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
+    private void respondBytes(HttpExchange exchange, int status, String contentType, byte[] bytes)
+            throws IOException {
+
+        exchange.getResponseHeaders().add("Content-Type", contentType);
 
         exchange.sendResponseHeaders(status, bytes.length);
 
