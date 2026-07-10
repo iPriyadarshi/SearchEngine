@@ -10,7 +10,7 @@ This project implements:
 - query processing (ranked, phrase, and boolean queries)
 - disk persistence of the index
 - HTML parsing and a small web crawler
-- an interactive CLI and a REST/HTTP search API
+- an interactive CLI, a REST/HTTP search API, and a responsive web UI
 - extensible architecture using SOLID principles
 
 ---
@@ -107,8 +107,10 @@ com.searchengine
 ├── engine/         SearchEngine facade + result formatting
 ├── storage/        disk persistence (IndexStore)
 ├── crawler/        web crawler + pluggable page fetcher
-├── http/           REST search API over the JDK HttpServer
+├── http/           REST search API + responsive web UI over the JDK HttpServer
 └── Main            command line entry point
+
+resources/web/      single-page web UI (HTML + CSS + JS)
 ```
 
 ---
@@ -364,17 +366,24 @@ Indexed 5 documents from data/raw.
     An inverted index maps each term to the list of documents that contain it...
 ```
 
-## REST API
+## Web UI
 
-Start the server:
+Start the server and open the responsive single-page UI in a browser:
 
 ```
 mvn exec:java -Dexec.args="--serve 8080"
 ```
 
-Endpoints (all return JSON):
+Then visit <http://localhost:8080/>. The UI works on both mobile and desktop
+screens and supports ranked (TF-IDF / BM25 / Cosine), phrase, and boolean search
+with a results list showing score, path, and snippet.
+
+## REST API
+
+The same server exposes JSON endpoints used by the UI:
 
 ```
+GET /               responsive web UI
 GET /search?q=<query>&ranker=tfidf|cosine|bm25&limit=N
 GET /phrase?q=<phrase>&limit=N
 GET /bool?q=<expr with AND / OR / NOT>
