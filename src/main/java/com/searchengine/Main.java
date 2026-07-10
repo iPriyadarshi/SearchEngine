@@ -5,8 +5,12 @@ import com.searchengine.api.Parser;
 import com.searchengine.api.Ranker;
 import com.searchengine.api.TokenFilter;
 import com.searchengine.api.Tokenizer;
+import com.searchengine.api.DocumentSource;
+import com.searchengine.crawler.JsoupPageFetcher;
+import com.searchengine.crawler.WebCrawler;
 import com.searchengine.document.model.Document;
 import com.searchengine.document.source.FolderDocumentSource;
+import com.searchengine.document.source.HtmlDocumentSource;
 import com.searchengine.engine.ResultFormatter;
 import com.searchengine.engine.SearchEngine;
 import com.searchengine.index.core.PositionalInvertedIndex;
@@ -49,8 +53,8 @@ public class Main {
 
         SearchEngine engine;
 
-        // --load <file>: rebuild the index from a saved snapshot instead of
-        // parsing the document folder. Any remaining arguments are the query.
+        // Source-selection flags consume their arguments; anything left over is
+        // treated as a one-shot query.
         if (args.length >= 2 && args[0].equals("--load")) {
 
             engine = loadEngine(args[1]);
@@ -59,6 +63,35 @@ public class Main {
                     + " documents from index " + args[1] + ".");
 
             args = java.util.Arrays.copyOfRange(args, 2, args.length);
+
+        } else if (args.length >= 2 && args[0].equals("--html")) {
+
+            engine = buildEngineFrom(new HtmlDocumentSource(args[1]));
+
+            System.out.println("Indexed " + engine.getDocumentCount()
+                    + " HTML documents from " + args[1] + ".");
+
+            args = java.util.Arrays.copyOfRange(args, 2, args.length);
+
+        } else if (args.length >= 2 && args[0].equals("--crawl")) {
+
+            int maxPages = 25;
+
+            int consumed = 2;
+
+            if (args.length >= 3 && args[2].matches("\\d+")) {
+
+                maxPages = Integer.parseInt(args[2]);
+
+                consumed = 3;
+            }
+
+            engine = crawlEngine(args[1], maxPages);
+
+            System.out.println("Crawled and indexed " + engine.getDocumentCount()
+                    + " pages from " + args[1] + ".");
+
+            args = java.util.Arrays.copyOfRange(args, consumed, args.length);
 
         } else {
 
@@ -120,13 +153,25 @@ public class Main {
 
     private static SearchEngine buildEngine(String folderPath) throws Exception {
 
-        FolderDocumentSource source = new FolderDocumentSource(folderPath);
+        return buildEngineFrom(new FolderDocumentSource(folderPath));
+    }
 
-        List<Document> documents = source.loadDocuments();
+    private static SearchEngine buildEngineFrom(DocumentSource source) throws Exception {
 
         SearchEngine engine = new SearchEngine(buildParser(), new PositionalInvertedIndex());
 
-        engine.index(documents);
+        engine.index(source.loadDocuments());
+
+        return engine;
+    }
+
+    private static SearchEngine crawlEngine(String seedUrl, int maxPages) {
+
+        WebCrawler crawler = new WebCrawler(new JsoupPageFetcher(), maxPages);
+
+        SearchEngine engine = new SearchEngine(buildParser(), new PositionalInvertedIndex());
+
+        engine.index(crawler.crawl(seedUrl));
 
         return engine;
     }
@@ -315,6 +360,9 @@ public class Main {
                   :help           show this help
                   :quit / :q      exit
 
-                Start with --load <file> to rebuild the index from a saved snapshot.""");
+                Startup source flags (choose one, before any query):
+                  --load <file>     rebuild the index from a saved snapshot
+                  --html <folder>   index a folder of .html/.htm files
+                  --crawl <url> [n] crawl up to n pages (default 25) from a seed URL""");
     }
 }
