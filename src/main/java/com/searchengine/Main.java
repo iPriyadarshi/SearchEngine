@@ -24,6 +24,7 @@ import com.searchengine.query.result.SearchResult;
 import com.searchengine.ranking.core.BM25Ranker;
 import com.searchengine.ranking.core.CosineSimilarityRanker;
 import com.searchengine.ranking.core.TFIDFRanker;
+import com.searchengine.storage.IndexStore;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -46,7 +47,26 @@ public class Main {
 
     public static void main(String[] args) throws Exception {
 
-        SearchEngine engine = buildEngine(DEFAULT_FOLDER);
+        SearchEngine engine;
+
+        // --load <file>: rebuild the index from a saved snapshot instead of
+        // parsing the document folder. Any remaining arguments are the query.
+        if (args.length >= 2 && args[0].equals("--load")) {
+
+            engine = loadEngine(args[1]);
+
+            System.out.println("Loaded " + engine.getDocumentCount()
+                    + " documents from index " + args[1] + ".");
+
+            args = java.util.Arrays.copyOfRange(args, 2, args.length);
+
+        } else {
+
+            engine = buildEngine(DEFAULT_FOLDER);
+
+            System.out.println("Indexed " + engine.getDocumentCount()
+                    + " documents from " + DEFAULT_FOLDER + ".");
+        }
 
         PositionalInvertedIndex index = (PositionalInvertedIndex) engine.getIndex();
 
@@ -56,9 +76,6 @@ public class Main {
 
         BooleanQueryExecutor booleanExecutor =
                 new BooleanQueryExecutor(index, index, engine::analyzeQuery);
-
-        System.out.println("Indexed " + engine.getDocumentCount()
-                + " documents from " + DEFAULT_FOLDER + ".");
 
         if (args.length > 0) {
 
@@ -88,11 +105,7 @@ public class Main {
         repl(engine, rankers, phraseExecutor, booleanExecutor);
     }
 
-    private static SearchEngine buildEngine(String folderPath) throws Exception {
-
-        FolderDocumentSource source = new FolderDocumentSource(folderPath);
-
-        List<Document> documents = source.loadDocuments();
+    private static Parser buildParser() {
 
         Tokenizer tokenizer = new RegexTokenizer();
 
@@ -102,13 +115,27 @@ public class Main {
                 new LengthFilter(2),
                 new PorterStemmerFilter());
 
-        Parser parser = new DefaultParser(tokenizer, filters);
+        return new DefaultParser(tokenizer, filters);
+    }
 
-        Index index = new PositionalInvertedIndex();
+    private static SearchEngine buildEngine(String folderPath) throws Exception {
 
-        SearchEngine engine = new SearchEngine(parser, index);
+        FolderDocumentSource source = new FolderDocumentSource(folderPath);
+
+        List<Document> documents = source.loadDocuments();
+
+        SearchEngine engine = new SearchEngine(buildParser(), new PositionalInvertedIndex());
 
         engine.index(documents);
+
+        return engine;
+    }
+
+    private static SearchEngine loadEngine(String indexFile) throws Exception {
+
+        SearchEngine engine = new SearchEngine(buildParser(), new PositionalInvertedIndex());
+
+        new IndexStore().load(engine, java.nio.file.Path.of(indexFile));
 
         return engine;
     }
@@ -244,6 +271,17 @@ public class Main {
                     continue;
                 }
 
+                if (line.startsWith(":save ")) {
+
+                    String file = line.substring(":save ".length()).strip();
+
+                    new IndexStore().save(engine, java.nio.file.Path.of(file));
+
+                    System.out.println("Saved index to " + file + ".");
+
+                    continue;
+                }
+
                 if (isPhrase(line)) {
 
                     List<String> terms = engine.analyzeQuery(stripQuotes(line));
@@ -273,7 +311,10 @@ public class Main {
                   :bool <expr>    boolean search using AND / OR / NOT and ( )
                   :ranker <name>  switch ranking algorithm (tfidf, cosine, bm25)
                   :rankers        list available rankers
+                  :save <file>    persist the current index to disk
                   :help           show this help
-                  :quit / :q      exit""");
+                  :quit / :q      exit
+
+                Start with --load <file> to rebuild the index from a saved snapshot.""");
     }
 }

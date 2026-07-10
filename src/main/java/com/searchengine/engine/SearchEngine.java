@@ -30,6 +30,8 @@ public class SearchEngine {
 
     private final Map<Integer, Document> documents = new ConcurrentHashMap<>();
 
+    private final Map<Integer, List<String>> analyzedTokens = new ConcurrentHashMap<>();
+
     public SearchEngine(Parser parser, Index index) {
 
         this.parser = parser;
@@ -54,11 +56,29 @@ public class SearchEngine {
      */
     public void indexDocument(Document doc) {
 
-        List<String> tokens = parser.parse(doc);
+        addAnalyzed(doc, parser.parse(doc));
+    }
+
+    /**
+     * Index a document whose tokens have already been analyzed, skipping the
+     * parser pipeline. Used when rebuilding an index from persisted storage.
+     */
+    public void addAnalyzed(Document doc, List<String> tokens) {
 
         index.addDocument(doc, tokens);
 
         documents.put(doc.getId(), doc);
+
+        analyzedTokens.put(doc.getId(), List.copyOf(tokens));
+    }
+
+    /**
+     * Snapshot of the analyzed token stream for every indexed document, keyed
+     * by document id. Used to persist the index.
+     */
+    public Map<Integer, List<String>> getAnalyzedTokens() {
+
+        return Map.copyOf(analyzedTokens);
     }
 
     /**
