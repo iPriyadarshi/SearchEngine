@@ -1,0 +1,3 @@
+A phrase query matches documents where the search terms appear next to each other in order.
+Positional indexes store the position of every term occurrence so that phrase and proximity search work.
+Boolean queries combine terms with AND, OR, and NOT operators to filter the result set.

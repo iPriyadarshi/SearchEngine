@@ -1,0 +1,3 @@
+An inverted index maps each term to the list of documents that contain it.
+Search engines build inverted indexes to answer keyword queries quickly.
+Term frequency and document frequency drive the ranking of results.

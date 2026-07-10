@@ -1,0 +1,3 @@
+TF-IDF weighs a term by how often it appears in a document and how rare it is across the corpus.
+BM25 is a probabilistic ranking function that improves on TF-IDF by normalizing for document length.
+Ranking algorithms decide which documents are most relevant to a search query.

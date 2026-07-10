@@ -1,0 +1,3 @@
+Java is a popular programming language for building scalable backend systems.
+This project implements a small search engine in Java using clean architecture and SOLID principles.
+Tokenizers, filters, indexes, and rankers are composed into a flexible pipeline.
