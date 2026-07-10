@@ -16,8 +16,10 @@ import com.searchengine.parser.filter.LowercaseFilter;
 import com.searchengine.parser.filter.PorterStemmerFilter;
 import com.searchengine.parser.filter.StopwordFilter;
 import com.searchengine.parser.tokenizer.RegexTokenizer;
+import com.searchengine.query.executor.BooleanQueryExecutor;
 import com.searchengine.query.executor.PhraseQueryExecutor;
 import com.searchengine.query.model.PhraseQuery;
+import com.searchengine.query.parser.BooleanQueryParser;
 import com.searchengine.query.result.SearchResult;
 import com.searchengine.ranking.core.BM25Ranker;
 import com.searchengine.ranking.core.CosineSimilarityRanker;
@@ -52,10 +54,22 @@ public class Main {
 
         PhraseQueryExecutor phraseExecutor = new PhraseQueryExecutor(index);
 
+        BooleanQueryExecutor booleanExecutor =
+                new BooleanQueryExecutor(index, index, engine::analyzeQuery);
+
         System.out.println("Indexed " + engine.getDocumentCount()
                 + " documents from " + DEFAULT_FOLDER + ".");
 
         if (args.length > 0) {
+
+            if (args[0].equals("--bool")) {
+
+                String expr = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
+
+                runBoolean(engine, booleanExecutor, expr);
+
+                return;
+            }
 
             String query = String.join(" ", args);
 
@@ -71,7 +85,7 @@ public class Main {
             return;
         }
 
-        repl(engine, rankers, phraseExecutor);
+        repl(engine, rankers, phraseExecutor, booleanExecutor);
     }
 
     private static SearchEngine buildEngine(String folderPath) throws Exception {
@@ -128,6 +142,20 @@ public class Main {
         System.out.println(new ResultFormatter(engine).format(result));
     }
 
+    private static void runBoolean(SearchEngine engine, BooleanQueryExecutor executor, String expr) {
+
+        try {
+
+            SearchResult result = executor.execute(new BooleanQueryParser().parse(expr));
+
+            System.out.println(new ResultFormatter(engine).format(result));
+
+        } catch (IllegalArgumentException e) {
+
+            System.out.println("Invalid boolean query: " + e.getMessage());
+        }
+    }
+
     private static boolean isPhrase(String query) {
 
         String q = query.strip();
@@ -143,7 +171,8 @@ public class Main {
     }
 
     private static void repl(SearchEngine engine, Map<String, Ranker> rankers,
-                             PhraseQueryExecutor phraseExecutor) throws Exception {
+                             PhraseQueryExecutor phraseExecutor,
+                             BooleanQueryExecutor booleanExecutor) throws Exception {
 
         ResultFormatter formatter = new ResultFormatter(engine);
 
@@ -208,6 +237,13 @@ public class Main {
                     continue;
                 }
 
+                if (line.startsWith(":bool ")) {
+
+                    runBoolean(engine, booleanExecutor, line.substring(":bool ".length()));
+
+                    continue;
+                }
+
                 if (isPhrase(line)) {
 
                     List<String> terms = engine.analyzeQuery(stripQuotes(line));
@@ -234,6 +270,7 @@ public class Main {
                 Commands:
                   <text>          run a ranked search for <text>
                   "<phrase>"      phrase search (terms must be adjacent, in order)
+                  :bool <expr>    boolean search using AND / OR / NOT and ( )
                   :ranker <name>  switch ranking algorithm (tfidf, cosine, bm25)
                   :rankers        list available rankers
                   :help           show this help

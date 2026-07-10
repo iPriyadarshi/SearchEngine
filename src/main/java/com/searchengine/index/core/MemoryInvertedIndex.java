@@ -1,16 +1,18 @@
 package com.searchengine.index.core;
 
+import com.searchengine.api.DocumentIdProvider;
 import com.searchengine.api.DocumentLengthProvider;
 import com.searchengine.api.Index;
 import com.searchengine.document.model.Document;
 import com.searchengine.index.model.PostingList;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-public class MemoryInvertedIndex implements Index, DocumentLengthProvider {
+public class MemoryInvertedIndex implements Index, DocumentLengthProvider, DocumentIdProvider {
 
     private final Map<String, PostingList> index = new HashMap<>();
 
@@ -70,6 +72,12 @@ public class MemoryInvertedIndex implements Index, DocumentLengthProvider {
     public int getTotalDocuments() {
 
         return totalDocuments;
+    }
+
+    @Override
+    public Set<Integer> documentIds() {
+
+        return new HashSet<>(documentLengths.keySet());
     }
 
     public Set<String> vocabulary() {

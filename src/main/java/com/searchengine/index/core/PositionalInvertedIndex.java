@@ -1,5 +1,6 @@
 package com.searchengine.index.core;
 
+import com.searchengine.api.DocumentIdProvider;
 import com.searchengine.api.DocumentLengthProvider;
 import com.searchengine.api.Index;
 import com.searchengine.document.model.Document;
@@ -9,6 +10,7 @@ import com.searchengine.index.model.PostingList;
 
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -19,7 +21,7 @@ import java.util.Set;
  * {@link DocumentLengthProvider} so it is a drop-in replacement for
  * {@link MemoryInvertedIndex} and works with all existing rankers.
  */
-public class PositionalInvertedIndex implements Index, DocumentLengthProvider {
+public class PositionalInvertedIndex implements Index, DocumentLengthProvider, DocumentIdProvider {
 
     private final Map<String, PositionalPostingList> index = new HashMap<>();
 
@@ -113,6 +115,12 @@ public class PositionalInvertedIndex implements Index, DocumentLengthProvider {
         }
 
         return (double) totalTokens / totalDocuments;
+    }
+
+    @Override
+    public Set<Integer> documentIds() {
+
+        return new HashSet<>(documentLengths.keySet());
     }
 
     public Set<String> vocabulary() {
