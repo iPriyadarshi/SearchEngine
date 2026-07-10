@@ -4,11 +4,13 @@ A **modular, extensible mini search engine** built from scratch in Java to under
 
 This project implements:
 
-- document parsing pipeline
-- inverted index
-- ranking algorithms (TF, TF-IDF)
-- query processing
-- memory vs disk tradeoffs
+- document parsing pipeline (tokenizer + filters + Porter stemmer)
+- inverted index and positional inverted index
+- ranking algorithms (TF-IDF, Cosine, BM25)
+- query processing (ranked, phrase, and boolean queries)
+- disk persistence of the index
+- HTML parsing and a small web crawler
+- an interactive CLI and a REST/HTTP search API
 - extensible architecture using SOLID principles
 
 ---
@@ -46,12 +48,14 @@ We aim to explore:
 * efficient lookup structure
 
 ### Ranking
-* frequency-based ranking
-* TF scoring
 * TF-IDF scoring
+* Cosine (tf-idf weighted) scoring
+* BM25 scoring with document-length normalization
 
 ### Query Engine
-* keyword queries
+* ranked keyword queries
+* phrase queries (via positional index)
+* boolean queries (AND / OR / NOT with parentheses)
 * ranked results
 * fast lookup
 
@@ -87,7 +91,25 @@ Ranking Algorithm
  Search Results
 ```
 
+---
 
+# Module Overview
+
+```
+com.searchengine
+├── api/            core interfaces (Index, Ranker, Parser, Tokenizer, TokenFilter,
+│                   QueryParser, DocumentSource, DocumentLengthProvider, DocumentIdProvider)
+├── document/       Document model and sources (folder, HTML)
+├── parser/         tokenizer, filters, and the Porter stemmer
+├── index/          memory and positional inverted indexes + posting models
+├── ranking/        TF-IDF, Cosine, and BM25 rankers
+├── query/          query models, parsers, and executors (ranked, phrase, boolean)
+├── engine/         SearchEngine facade + result formatting
+├── storage/        disk persistence (IndexStore)
+├── crawler/        web crawler + pluggable page fetcher
+├── http/           REST search API over the JDK HttpServer
+└── Main            command line entry point
+```
 
 ---
 
@@ -163,9 +185,9 @@ Ranking algorithms:
 
 ```
 Ranker
-├── TfRanker
-├── TfIdfRanker
-└── BM25Ranker (future)
+├── TFIDFRanker
+├── CosineSimilarityRanker
+└── BM25Ranker
 ```
 
 ---
@@ -272,7 +294,7 @@ df = number of documents containing term
 
 ## Requirements
 
-Java 17+
+Java 26+
 
 Maven 3.9+
 
@@ -296,37 +318,77 @@ mvn test
 
 # Example Usage
 
-Place text files in:
+Place text files in `data/raw/` (a small sample corpus ships with the project).
+
+## Command line
+
+One-shot ranked search:
 
 ```
-data/
+mvn exec:java -Dexec.args="inverted index ranking"
+```
+
+Interactive REPL (no arguments):
+
+```
+mvn exec:java
+```
+
+REPL commands:
+
+```
+<text>            ranked search
+"<phrase>"        phrase search (terms must be adjacent, in order)
+:bool <expr>      boolean search using AND / OR / NOT and ( )
+:ranker <name>    switch ranking algorithm (tfidf, cosine, bm25)
+:rankers          list available rankers
+:save <file>      persist the current index to disk
+:help             show help
+:quit / :q        exit
+```
+
+Startup source flags (choose one, before any query):
+
+```
+--load <file>     rebuild the index from a saved snapshot
+--html <folder>   index a folder of .html/.htm files
+--crawl <url> [n] crawl up to n pages (default 25) from a seed URL
+--serve [port]    start the HTTP search API (default port 8080)
+```
+
+Example output:
+
+```
+Indexed 5 documents from data/raw.
+ 1. doc=1  score=5.2507  data\raw\doc2.txt
+    An inverted index maps each term to the list of documents that contain it...
+```
+
+## REST API
+
+Start the server:
+
+```
+mvn exec:java -Dexec.args="--serve 8080"
+```
+
+Endpoints (all return JSON):
+
+```
+GET /search?q=<query>&ranker=tfidf|cosine|bm25&limit=N
+GET /phrase?q=<phrase>&limit=N
+GET /bool?q=<expr with AND / OR / NOT>
+GET /health
 ```
 
 Example:
 
 ```
-doc1.txt
-doc2.txt
-doc3.txt
-```
+curl "http://localhost:8080/search?q=ranking%20documents&ranker=bm25"
 
-Run:
-
-```
-Main.java
-```
-
-Search query:
-
-```
-search engine
-```
-
-Output:
-
-```
-doc1 score=0.87
-doc3 score=0.52
+{"query":"ranking documents","mode":"bm25","count":3,"results":[
+  {"docId":2,"score":1.93,"path":"data/raw/doc3.txt","snippet":"TF-IDF weighs a term..."}
+]}
 ```
 
 ---
@@ -343,50 +405,55 @@ Parser pipeline
 ---
 
 ## STEP 2
-Inverted index
+Inverted index ✔
 
 term → postings list
 
 ---
 
 ## STEP 3
-ranking algorithms
+ranking algorithms ✔
 
-TF
-TF-IDF
+TF-IDF ✔
+Cosine ✔
+BM25 ✔
 
 ---
 
 ## STEP 4
-query engine
+query engine ✔
 
-search API
+ranked search ✔
+phrase search ✔
+boolean search ✔
+search API (CLI + REST) ✔
 
 ---
 
 ## STEP 5
-disk storage
+disk storage ✔
 
-serialize index
+serialize / reload index ✔
 
 ---
 
 ## STEP 6
 optimization
 
-compression
-faster lookup
+faster lookup ✔ (positional index)
+compression (future)
 
 ---
 
 ## STEP 7
 advanced features:
 
-- phrase search
-- stemming
-- BM25 ranking
-- web crawler
-- incremental indexing
+- phrase search ✔
+- stemming ✔ (Porter)
+- BM25 ranking ✔
+- web crawler ✔
+- incremental indexing ✔
+- REST API ✔
 
 ---
 
