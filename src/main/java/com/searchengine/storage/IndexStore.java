@@ -6,11 +6,18 @@ import com.searchengine.engine.SearchEngine;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.PushbackInputStream;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * Persists an analyzed corpus to disk and rebuilds an index from it, so the
@@ -33,29 +40,56 @@ public class IndexStore {
 
     private static final String VERSION = "1";
 
+    private static final int GZIP_MAGIC_1 = 0x1f;
+
+    private static final int GZIP_MAGIC_2 = 0x8b;
+
     public void save(SearchEngine engine, Path file) throws IOException {
+
+        try (OutputStream out = Files.newOutputStream(file)) {
+
+            write(engine, out);
+        }
+    }
+
+    /**
+     * Save a gzip-compressed index. {@link #load} auto-detects compression, so
+     * compressed and plain files can be loaded with the same call.
+     */
+    public void saveCompressed(SearchEngine engine, Path file) throws IOException {
+
+        try (OutputStream out = new GZIPOutputStream(Files.newOutputStream(file))) {
+
+            write(engine, out);
+        }
+    }
+
+    private void write(SearchEngine engine, OutputStream out) throws IOException {
 
         Map<Integer, List<String>> tokensByDoc = engine.getAnalyzedTokens();
 
-        try (BufferedWriter writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8)) {
+        Writer writer = new BufferedWriter(new java.io.OutputStreamWriter(out, StandardCharsets.UTF_8));
 
-            writer.write(HEADER + "\t" + VERSION);
+        writer.write(HEADER + "\t" + VERSION);
 
-            writer.newLine();
+        writer.write("\n");
 
-            for (Map.Entry<Integer, List<String>> entry : tokensByDoc.entrySet()) {
+        for (Map.Entry<Integer, List<String>> entry : tokensByDoc.entrySet()) {
 
-                int docId = entry.getKey();
+            int docId = entry.getKey();
 
-                Document doc = engine.getDocument(docId);
+            Document doc = engine.getDocument(docId);
 
-                String path = doc != null ? doc.getPath() : "";
+            String path = doc != null ? doc.getPath() : "";
 
-                writer.write(docId + "\t" + path + "\t" + String.join(" ", entry.getValue()));
+            writer.write(docId + "\t" + path + "\t" + String.join(" ", entry.getValue()));
 
-                writer.newLine();
-            }
+            writer.write("\n");
         }
+
+        // Flush the wrapping writer without closing the caller-managed stream
+        // early (try-with-resources on `out` still closes the underlying file).
+        writer.flush();
     }
 
     /**
@@ -64,7 +98,8 @@ public class IndexStore {
      */
     public void load(SearchEngine engine, Path file) throws IOException {
 
-        try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(openMaybeGzip(file), StandardCharsets.UTF_8))) {
 
             String header = reader.readLine();
 
@@ -102,6 +137,36 @@ public class IndexStore {
                 engine.addAnalyzed(new Document(docId, readContent(path), path), tokens);
             }
         }
+    }
+
+    /**
+     * Open the file, transparently wrapping it in a GZIP stream when the gzip
+     * magic bytes are present.
+     */
+    private InputStream openMaybeGzip(Path file) throws IOException {
+
+        PushbackInputStream in = new PushbackInputStream(Files.newInputStream(file), 2);
+
+        int b1 = in.read();
+
+        int b2 = in.read();
+
+        if (b2 != -1) {
+
+            in.unread(b2);
+        }
+
+        if (b1 != -1) {
+
+            in.unread(b1);
+        }
+
+        if (b1 == GZIP_MAGIC_1 && b2 == GZIP_MAGIC_2) {
+
+            return new GZIPInputStream(in);
+        }
+
+        return in;
     }
 
     private String readContent(String path) {

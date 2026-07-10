@@ -70,6 +70,39 @@ public class IndexStoreTest {
     }
 
     @Test
+    void shouldLoadCompressedIndexTransparently(@TempDir Path dir) throws IOException {
+
+        SearchEngine original = buildAndIndex(new MemoryInvertedIndex());
+
+        Path plain = dir.resolve("index.se");
+
+        Path gz = dir.resolve("index.se.gz");
+
+        IndexStore store = new IndexStore();
+
+        store.save(original, plain);
+
+        store.saveCompressed(original, gz);
+
+        // Compression should actually shrink the (repetitive) index.
+        assertTrue(java.nio.file.Files.size(gz) > 0);
+
+        SearchEngine restored = new SearchEngine(parser(), new MemoryInvertedIndex());
+
+        store.load(restored, gz);
+
+        assertEquals(original.getDocumentCount(), restored.getDocumentCount());
+
+        SearchResult before = original.search("search ranking", new TFIDFRanker(original.getIndex()));
+
+        SearchResult after = restored.search("search ranking", new TFIDFRanker(restored.getIndex()));
+
+        assertEquals(
+                before.getResults().stream().map(r -> r.getDocId()).toList(),
+                after.getResults().stream().map(r -> r.getDocId()).toList());
+    }
+
+    @Test
     void shouldRebuildPositionsWhenLoadingIntoPositionalIndex(@TempDir Path dir) throws IOException {
 
         SearchEngine original = buildAndIndex(new PositionalInvertedIndex());

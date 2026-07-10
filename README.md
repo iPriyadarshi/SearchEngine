@@ -441,7 +441,7 @@ serialize / reload index ✔
 optimization
 
 faster lookup ✔ (positional index)
-compression (future)
+compression ✔ (gzip-compressed index)
 
 ---
 

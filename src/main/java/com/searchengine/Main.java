@@ -339,7 +339,16 @@ public class Main {
 
                     String file = line.substring(":save ".length()).strip();
 
-                    new IndexStore().save(engine, java.nio.file.Path.of(file));
+                    java.nio.file.Path path = java.nio.file.Path.of(file);
+
+                    if (file.endsWith(".gz")) {
+
+                        new IndexStore().saveCompressed(engine, path);
+
+                    } else {
+
+                        new IndexStore().save(engine, path);
+                    }
 
                     System.out.println("Saved index to " + file + ".");
 
@@ -375,7 +384,7 @@ public class Main {
                   :bool <expr>    boolean search using AND / OR / NOT and ( )
                   :ranker <name>  switch ranking algorithm (tfidf, cosine, bm25)
                   :rankers        list available rankers
-                  :save <file>    persist the current index to disk
+                  :save <file>    persist the current index to disk (.gz = compressed)
                   :help           show this help
                   :quit / :q      exit
 
