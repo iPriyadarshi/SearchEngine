@@ -17,6 +17,7 @@ import com.searchengine.parser.filter.PorterStemmerFilter;
 import com.searchengine.parser.filter.StopwordFilter;
 import com.searchengine.parser.tokenizer.RegexTokenizer;
 import com.searchengine.query.result.SearchResult;
+import com.searchengine.ranking.core.BM25Ranker;
 import com.searchengine.ranking.core.CosineSimilarityRanker;
 import com.searchengine.ranking.core.TFIDFRanker;
 
@@ -92,6 +93,8 @@ public class Main {
         rankers.put("tfidf", new TFIDFRanker(index));
 
         rankers.put("cosine", new CosineSimilarityRanker(index));
+
+        rankers.put("bm25", new BM25Ranker(index));
 
         return rankers;
     }
@@ -182,7 +185,7 @@ public class Main {
         System.out.println("""
                 Commands:
                   <text>          run a ranked search for <text>
-                  :ranker <name>  switch ranking algorithm (tfidf, cosine)
+                  :ranker <name>  switch ranking algorithm (tfidf, cosine, bm25)
                   :rankers        list available rankers
                   :help           show this help
                   :quit / :q      exit""");
