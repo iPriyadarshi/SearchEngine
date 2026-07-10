@@ -9,13 +9,15 @@ import com.searchengine.document.model.Document;
 import com.searchengine.document.source.FolderDocumentSource;
 import com.searchengine.engine.ResultFormatter;
 import com.searchengine.engine.SearchEngine;
-import com.searchengine.index.core.MemoryInvertedIndex;
+import com.searchengine.index.core.PositionalInvertedIndex;
 import com.searchengine.parser.core.DefaultParser;
 import com.searchengine.parser.filter.LengthFilter;
 import com.searchengine.parser.filter.LowercaseFilter;
 import com.searchengine.parser.filter.PorterStemmerFilter;
 import com.searchengine.parser.filter.StopwordFilter;
 import com.searchengine.parser.tokenizer.RegexTokenizer;
+import com.searchengine.query.executor.PhraseQueryExecutor;
+import com.searchengine.query.model.PhraseQuery;
 import com.searchengine.query.result.SearchResult;
 import com.searchengine.ranking.core.BM25Ranker;
 import com.searchengine.ranking.core.CosineSimilarityRanker;
@@ -44,7 +46,11 @@ public class Main {
 
         SearchEngine engine = buildEngine(DEFAULT_FOLDER);
 
-        Map<String, Ranker> rankers = buildRankers(engine.getIndex());
+        PositionalInvertedIndex index = (PositionalInvertedIndex) engine.getIndex();
+
+        Map<String, Ranker> rankers = buildRankers(index);
+
+        PhraseQueryExecutor phraseExecutor = new PhraseQueryExecutor(index);
 
         System.out.println("Indexed " + engine.getDocumentCount()
                 + " documents from " + DEFAULT_FOLDER + ".");
@@ -53,12 +59,19 @@ public class Main {
 
             String query = String.join(" ", args);
 
-            runOnce(engine, rankers.get("tfidf"), query);
+            if (isPhrase(query)) {
+
+                runPhrase(engine, phraseExecutor, query);
+
+            } else {
+
+                runOnce(engine, rankers.get("tfidf"), query);
+            }
 
             return;
         }
 
-        repl(engine, rankers);
+        repl(engine, rankers, phraseExecutor);
     }
 
     private static SearchEngine buildEngine(String folderPath) throws Exception {
@@ -77,7 +90,7 @@ public class Main {
 
         Parser parser = new DefaultParser(tokenizer, filters);
 
-        Index index = new MemoryInvertedIndex();
+        Index index = new PositionalInvertedIndex();
 
         SearchEngine engine = new SearchEngine(parser, index);
 
@@ -106,7 +119,31 @@ public class Main {
         System.out.println(new ResultFormatter(engine).format(result));
     }
 
-    private static void repl(SearchEngine engine, Map<String, Ranker> rankers) throws Exception {
+    private static void runPhrase(SearchEngine engine, PhraseQueryExecutor executor, String quoted) {
+
+        List<String> terms = engine.analyzeQuery(stripQuotes(quoted));
+
+        SearchResult result = executor.execute(new PhraseQuery(terms));
+
+        System.out.println(new ResultFormatter(engine).format(result));
+    }
+
+    private static boolean isPhrase(String query) {
+
+        String q = query.strip();
+
+        return q.length() >= 2 && q.startsWith("\"") && q.endsWith("\"");
+    }
+
+    private static String stripQuotes(String query) {
+
+        String q = query.strip();
+
+        return q.substring(1, q.length() - 1);
+    }
+
+    private static void repl(SearchEngine engine, Map<String, Ranker> rankers,
+                             PhraseQueryExecutor phraseExecutor) throws Exception {
 
         ResultFormatter formatter = new ResultFormatter(engine);
 
@@ -171,6 +208,17 @@ public class Main {
                     continue;
                 }
 
+                if (isPhrase(line)) {
+
+                    List<String> terms = engine.analyzeQuery(stripQuotes(line));
+
+                    SearchResult phraseResult = phraseExecutor.execute(new PhraseQuery(terms));
+
+                    System.out.println(formatter.format(phraseResult));
+
+                    continue;
+                }
+
                 SearchResult result = engine.search(line, rankers.get(current));
 
                 System.out.println(formatter.format(result));
@@ -185,6 +233,7 @@ public class Main {
         System.out.println("""
                 Commands:
                   <text>          run a ranked search for <text>
+                  "<phrase>"      phrase search (terms must be adjacent, in order)
                   :ranker <name>  switch ranking algorithm (tfidf, cosine, bm25)
                   :rankers        list available rankers
                   :help           show this help

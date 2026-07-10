@@ -3,9 +3,11 @@ package com.searchengine.index.core;
 import com.searchengine.api.DocumentLengthProvider;
 import com.searchengine.api.Index;
 import com.searchengine.document.model.Document;
+import com.searchengine.index.model.PositionalPosting;
 import com.searchengine.index.model.PositionalPostingList;
 import com.searchengine.index.model.PostingList;
 
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +64,17 @@ public class PositionalInvertedIndex implements Index, DocumentLengthProvider {
     public PositionalPostingList getPositionalPostingList(String term) {
 
         return index.get(term);
+    }
+
+    /**
+     * All positional postings for a term, or an empty collection if the term is
+     * unknown (never {@code null}).
+     */
+    public Collection<PositionalPosting> getPositionalPostings(String term) {
+
+        PositionalPostingList list = index.get(term);
+
+        return list == null ? List.of() : list.getPostings();
     }
 
     public List<Integer> getPositions(String term, int docId) {
