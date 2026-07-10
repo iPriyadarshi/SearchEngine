@@ -322,6 +322,10 @@ mvn test
 
 Place text files in `data/raw/` (a small sample corpus ships with the project).
 
+> **Quoting note.** The examples below use bash / cmd quoting
+> (`-Dexec.args="..."`). In **PowerShell** the inner quotes are stripped, so
+> quote the whole token instead: `mvn exec:java '-Dexec.args=--serve 8080'`.
+
 ## Command line
 
 One-shot ranked search:
@@ -373,6 +377,8 @@ Start the server and open the responsive single-page UI in a browser:
 ```
 mvn exec:java -Dexec.args="--serve 8080"
 ```
+
+In PowerShell, quote the whole token instead: `mvn exec:java '-Dexec.args=--serve 8080'`.
 
 Then visit <http://localhost:8080/>. The UI works on both mobile and desktop
 screens and supports ranked (TF-IDF / BM25 / Cosine), phrase, and boolean search
