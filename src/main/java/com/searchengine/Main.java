@@ -13,6 +13,7 @@ import com.searchengine.document.source.FolderDocumentSource;
 import com.searchengine.document.source.HtmlDocumentSource;
 import com.searchengine.engine.ResultFormatter;
 import com.searchengine.engine.SearchEngine;
+import com.searchengine.http.SearchHttpServer;
 import com.searchengine.index.core.PositionalInvertedIndex;
 import com.searchengine.parser.core.DefaultParser;
 import com.searchengine.parser.filter.LengthFilter;
@@ -109,6 +110,24 @@ public class Main {
 
         BooleanQueryExecutor booleanExecutor =
                 new BooleanQueryExecutor(index, index, engine::analyzeQuery);
+
+        if (args.length > 0 && args[0].equals("--serve")) {
+
+            int port = args.length >= 2 && args[1].matches("\\d+") ? Integer.parseInt(args[1]) : 8080;
+
+            SearchHttpServer httpServer =
+                    new SearchHttpServer(port, engine, rankers, phraseExecutor, booleanExecutor);
+
+            httpServer.start();
+
+            System.out.println("Search API listening on http://localhost:" + httpServer.getPort());
+
+            System.out.println("Try: /search?q=..., /phrase?q=..., /bool?q=..., /health");
+
+            Thread.currentThread().join();
+
+            return;
+        }
 
         if (args.length > 0) {
 
@@ -363,6 +382,7 @@ public class Main {
                 Startup source flags (choose one, before any query):
                   --load <file>     rebuild the index from a saved snapshot
                   --html <folder>   index a folder of .html/.htm files
-                  --crawl <url> [n] crawl up to n pages (default 25) from a seed URL""");
+                  --crawl <url> [n] crawl up to n pages (default 25) from a seed URL
+                  --serve [port]    start the HTTP search API (default port 8080)""");
     }
 }

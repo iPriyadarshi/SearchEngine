@@ -48,7 +48,12 @@ public class ResultFormatter {
         return sb.toString().stripTrailing();
     }
 
-    private String snippet(String content) {
+    public static String snippet(String content) {
+
+        if (content == null) {
+
+            return "";
+        }
 
         String flat = content.replaceAll("\\s+", " ").strip();
 
