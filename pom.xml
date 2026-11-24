@@ -40,6 +40,18 @@
 
         </dependency>
 
+        <!-- runs the sentence-embedding model for semantic search -->
+
+        <dependency>
+
+            <groupId>com.microsoft.onnxruntime</groupId>
+
+            <artifactId>onnxruntime</artifactId>
+
+            <version>1.20.0</version>
+
+        </dependency>
+
         <!-- testing -->
 
         <dependency>
