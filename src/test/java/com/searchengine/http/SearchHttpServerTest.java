@@ -88,8 +88,11 @@ public class SearchHttpServerTest {
 
         assertTrue(response.body().contains("<title>sift</title>"));
 
-        // the UI must reference the API endpoints it calls
-        assertTrue(response.body().contains("/search") || response.body().contains("buildUrl"));
+        // the UI's tabs name the API endpoints it calls ("/" + mode)
+        for (String mode : new String[]{"search", "phrase", "bool"}) {
+
+            assertTrue(response.body().contains("data-mode=\"" + mode + "\""), mode);
+        }
     }
 
     @Test
