@@ -106,6 +106,16 @@ public class QueryAidsTest {
 
             assertEquals("python language", hits.suggestion());
 
+            // An unknown word is a near-certain typo: results are for the correction...
+            assertEquals("python langauge", hits.correctedFrom());
+
+            // ...unless the user asked for the exact query.
+            SearchBackend.Hits exact = backend.search("python langauge", "bm25", 10, true);
+
+            assertEquals(null, exact.suggestion());
+
+            assertEquals(null, exact.correctedFrom());
+
             // A query that finds nothing is answered for the corrected spelling.
             SearchBackend.Hits corrected = backend.search("pyramdis", "bm25", 10);
 

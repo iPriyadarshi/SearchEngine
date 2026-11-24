@@ -86,19 +86,22 @@ public class DiskSearchBackend implements SearchBackend {
     }
 
     /**
-     * Offer a spelling correction; when the query found nothing, answer the
-     * corrected query instead.
+     * Spelling, as on web search engines: when a word is unknown to the index
+     * (a near-certain typo) or the query found nothing, answer the corrected
+     * query and say so; otherwise just offer the correction.
      */
     private Hits withSpelling(String query, Hits hits, java.util.function.Function<String, Hits> rerun) {
 
-        String fixed = aids.correct(query);
+        QueryAids.Correction correction = aids.correction(query);
 
-        if (fixed == null) {
+        if (correction == null) {
 
             return hits;
         }
 
-        if (hits.hits().isEmpty()) {
+        String fixed = correction.text();
+
+        if (correction.confident() || hits.hits().isEmpty()) {
 
             Hits corrected = rerun.apply(fixed);
 
@@ -133,6 +136,18 @@ public class DiskSearchBackend implements SearchBackend {
     @Override
     public Hits search(String query, String ranker, int limit) {
 
+        return search(query, ranker, limit, false);
+    }
+
+    @Override
+    public Hits phrase(String query, int limit) {
+
+        return phrase(query, limit, false);
+    }
+
+    @Override
+    public Hits search(String query, String ranker, int limit, boolean exact) {
+
         Similarity similarity = similarities.get(ranker);
 
         if (similarity == null) {
@@ -146,7 +161,14 @@ public class DiskSearchBackend implements SearchBackend {
         // scores, useful for comparison.
         TopDocs top = ranker.equals("bm25") ? web.search(query, limit) : topK.search(analyze(query), similarity, limit);
 
-        return withSpelling(query, toHits(ranker, query, top, start), fixed -> {
+        Hits hits = toHits(ranker, query, top, start);
+
+        if (exact) {
+
+            return hits;
+        }
+
+        return withSpelling(query, hits, fixed -> {
 
             long again = System.nanoTime();
 
@@ -157,9 +179,14 @@ public class DiskSearchBackend implements SearchBackend {
     }
 
     @Override
-    public Hits phrase(String query, int limit) {
+    public Hits phrase(String query, int limit, boolean exact) {
 
         long start = System.nanoTime();
+
+        if (exact) {
+
+            return toHits("phrase", query, phrase.search(analyze(query), limit), start);
+        }
 
         return withSpelling(query, toHits("phrase", query, phrase.search(analyze(query), limit), start),
                 fixed -> toHits("phrase", fixed, phrase.search(analyze(fixed), limit), System.nanoTime()));

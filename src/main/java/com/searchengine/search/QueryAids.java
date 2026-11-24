@@ -141,15 +141,33 @@ public final class QueryAids {
     // ---------- spelling ----------
 
     /**
+     * A corrected query.
+     *
+     * @param confident every replaced word was unknown to the index, so the
+     *                  original almost certainly has a typo
+     */
+    public record Correction(String text, boolean confident) {
+    }
+
+    /**
      * The query with likely misspellings corrected, or {@code null} if no
      * word needs changing. Operators (AND/OR/NOT) and quotes are kept.
      */
     public String correct(String query) {
 
+        Correction correction = correction(query);
+
+        return correction == null ? null : correction.text();
+    }
+
+    public Correction correction(String query) {
+
         if (vocabulary.isEmpty()) {
 
             return null;
         }
+
+        boolean confident = true;
 
         StringBuilder out = new StringBuilder();
 
@@ -174,6 +192,8 @@ public final class QueryAids {
 
                 changed = true;
 
+                confident &= !vocabulary.containsKey(word.toLowerCase(Locale.ROOT));
+
             } else {
 
                 out.append(word);
@@ -184,7 +204,7 @@ public final class QueryAids {
 
         out.append(query.substring(last));
 
-        return changed ? out.toString() : null;
+        return changed ? new Correction(out.toString(), confident) : null;
     }
 
     String correctWord(String original) {

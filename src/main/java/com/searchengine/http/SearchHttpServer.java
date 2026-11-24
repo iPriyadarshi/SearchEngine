@@ -211,7 +211,9 @@ public class SearchHttpServer {
 
         Window window = window(params);
 
-        respond(exchange, 200, toJson(q, window.slice(backend.search(q, ranker, window.end())), window));
+        boolean exact = "1".equals(params.get("exact"));
+
+        respond(exchange, 200, toJson(q, window.slice(backend.search(q, ranker, window.end(), exact)), window));
     }
 
     private void handlePhrase(HttpExchange exchange) throws IOException {
@@ -222,7 +224,9 @@ public class SearchHttpServer {
 
         Window window = window(params);
 
-        respond(exchange, 200, toJson(q, window.slice(backend.phrase(q, window.end())), window));
+        boolean exact = "1".equals(params.get("exact"));
+
+        respond(exchange, 200, toJson(q, window.slice(backend.phrase(q, window.end(), exact)), window));
     }
 
     private void handleBool(HttpExchange exchange) throws IOException {

@@ -617,7 +617,8 @@
     const IGNORED_WORDS = new Set(["a", "an", "the", "is", "are", "was", "were", "in", "on", "at", "to",
         "for", "of", "and", "or", "not", "this", "that", "these", "those", "be", "been", "being"]);
 
-    const state = { q: "", page: 1 };
+    // exact: the user chose "Search instead for" the uncorrected query.
+    const state = { q: "", page: 1, exact: false };
     let requestId = 0;
 
     // ---------- theme ----------
@@ -762,7 +763,7 @@
             event.preventDefault();
             close();
             const q = input.value.trim();
-            if (q) navigate({ q: q, page: 1 });
+            if (q) navigate({ q: q, page: 1, exact: false });
             else input.focus();
         });
         container.appendChild(node);
@@ -800,12 +801,14 @@
         const params = new URLSearchParams(location.search);
         state.q = (params.get("q") || "").trim();
         state.page = Math.max(1, parseInt(params.get("page"), 10) || 1);
+        state.exact = params.get("exact") === "1";
     }
 
     function writeUrl(replace) {
         const params = new URLSearchParams();
         if (state.q) params.set("q", state.q);
         if (state.q && state.page > 1) params.set("page", state.page);
+        if (state.q && state.exact) params.set("exact", "1");
         const url = params.toString() ? "/?" + params : "/";
         history[replace ? "replaceState" : "pushState"](null, "", url);
     }
@@ -857,6 +860,7 @@
         const id = ++requestId;
         const offset = Math.min((state.page - 1) * PAGE_SIZE, MAX_RESULTS - PAGE_SIZE);
         const params = new URLSearchParams({ q: state.q, limit: PAGE_SIZE, offset: offset });
+        if (state.exact) params.set("exact", "1");
         let mode = detectMode(state.q);
 
         stats.textContent = "";
@@ -893,18 +897,23 @@
     function showSpelling(data) {
         if (data.correctedFrom) {
             spelling.hidden = false;
-            spelling.innerHTML = 'Showing results for <a href="#">' + escapeHtml(data.suggestion) + "</a>" +
-                '<br><span class="muted">No results for ' + escapeHtml(data.correctedFrom) + "</span>";
-            spelling.querySelector("a").addEventListener("click", event => {
+            spelling.innerHTML = 'Showing results for <a href="#" data-q="fixed">' + escapeHtml(data.suggestion) + "</a>" +
+                '<br><span class="muted">Search instead for <a href="#" data-q="original">' +
+                escapeHtml(data.correctedFrom) + "</a></span>";
+            spelling.querySelector('[data-q="fixed"]').addEventListener("click", event => {
                 event.preventDefault();
-                navigate({ q: data.suggestion, page: 1 });
+                navigate({ q: data.suggestion, page: 1, exact: false });
+            });
+            spelling.querySelector('[data-q="original"]').addEventListener("click", event => {
+                event.preventDefault();
+                navigate({ q: data.correctedFrom, page: 1, exact: true });
             });
         } else if (data.suggestion) {
             spelling.hidden = false;
             spelling.innerHTML = 'Did you mean: <a href="#">' + escapeHtml(data.suggestion) + "</a>";
             spelling.querySelector("a").addEventListener("click", event => {
                 event.preventDefault();
-                navigate({ q: data.suggestion, page: 1 });
+                navigate({ q: data.suggestion, page: 1, exact: false });
             });
         }
     }

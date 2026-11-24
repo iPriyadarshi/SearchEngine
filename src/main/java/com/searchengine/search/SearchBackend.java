@@ -28,9 +28,22 @@ public interface SearchBackend extends Closeable {
     Hits search(String query, String ranker, int limit);
 
     /**
+     * Like {@link #search}; with {@code exact} the query is never spell-corrected.
+     */
+    default Hits search(String query, String ranker, int limit, boolean exact) {
+
+        return search(query, ranker, limit);
+    }
+
+    /**
      * Exact phrase search (terms adjacent and in order).
      */
     Hits phrase(String query, int limit);
+
+    default Hits phrase(String query, int limit, boolean exact) {
+
+        return phrase(query, limit);
+    }
 
     /**
      * Boolean search with AND / OR / NOT and parentheses.
