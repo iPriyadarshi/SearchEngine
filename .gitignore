@@ -42,3 +42,5 @@ build/
 ### Large local data (dumps, built indexes) ###
 data/wiki/
 indexes/
+run/
+data/corpus/

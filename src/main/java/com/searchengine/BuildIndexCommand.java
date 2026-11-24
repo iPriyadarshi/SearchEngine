@@ -9,6 +9,8 @@ import com.searchengine.document.source.WikipediaDumpSource;
 import com.searchengine.document.source.WikipediaDumpSource.WikiPage;
 import com.searchengine.index.disk.DiskIndexWriter;
 import com.searchengine.index.disk.ParallelIndexer;
+import com.searchengine.web.CommonCrawlSource;
+import com.searchengine.web.Corpus;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -27,10 +29,15 @@ import java.util.stream.Stream;
  * {@code --build-index}: streams a document source into an on-disk index.
  *
  * <pre>
- * --build-index --out &lt;dir&gt; (--wiki &lt;dump|dir&gt;... | --folder &lt;dir&gt; | --html &lt;dir&gt;)
+ * --build-index --out &lt;dir&gt; (--wiki &lt;dump|dir&gt;... | --warc &lt;file|url&gt;... | --cc &lt;crawl&gt; [--cc-files n] [--cc-start k]
+ *                                | --folder &lt;dir&gt; | --html &lt;dir&gt;)
  *               [--max-docs n] [--mem-mb n] [--threads n]
  * </pre>
  *
+ * {@code --cc CC-MAIN-2026-47 --cc-files 30} streams 30 WARC files of that
+ * Common Crawl release from data.commoncrawl.org without storing them;
+ * {@code --warc} takes local WARC files or URLs.
+ * <p>
  * {@code --wiki} may be repeated, and may name a directory: every
  * {@code .bz2}/{@code .xml}/{@code .gz} dump in it is indexed in part order
  * (e.g. the 27 {@code enwiki-...-multistreamN.xml-pA pB.bz2} part files).
@@ -55,6 +62,16 @@ final class BuildIndexCommand {
 
         List<Path> wikiDumps = new ArrayList<>();
 
+        List<String> warcs = new ArrayList<>();
+
+        Path corpus = null;
+
+        String ccCrawl = null;
+
+        int ccFiles = 1;
+
+        int ccStart = 0;
+
         long maxDocs = Long.MAX_VALUE;
 
         long memoryBudget = Runtime.getRuntime().maxMemory() / 3;
@@ -78,6 +95,16 @@ final class BuildIndexCommand {
 
                 case "--wiki" -> wikiDumps.addAll(dumpFiles(Path.of(value)));
 
+                case "--corpus" -> corpus = Path.of(value);
+
+                case "--warc" -> warcs.add(value);
+
+                case "--cc" -> ccCrawl = value;
+
+                case "--cc-files" -> ccFiles = Integer.parseInt(value);
+
+                case "--cc-start" -> ccStart = Integer.parseInt(value);
+
                 case "--folder" -> folder = value;
 
                 case "--html" -> html = value;
@@ -92,9 +119,14 @@ final class BuildIndexCommand {
             }
         }
 
-        if (out == null || (wikiDumps.isEmpty() && folder == null && html == null)) {
+        if (ccCrawl != null) {
 
-            throw usage("--out and one source (--wiki, --folder, --html) are required");
+            warcs.addAll(CommonCrawlSource.crawlFiles(ccCrawl, ccStart, ccFiles));
+        }
+
+        if (out == null || (corpus == null && wikiDumps.isEmpty() && warcs.isEmpty() && folder == null && html == null)) {
+
+            throw usage("--out and a source (--corpus, --wiki, --warc, --cc, --folder, --html) are required");
         }
 
         System.out.printf("Building index in %s (postings buffer %,d MB, %d threads)%n",
@@ -106,7 +138,28 @@ final class BuildIndexCommand {
 
         try (DiskIndexWriter writer = new DiskIndexWriter(out, parser, memoryBudget, System.out::println)) {
 
-            if (!wikiDumps.isEmpty()) {
+            if (corpus != null) {
+
+                List<Path> files = Corpus.files(corpus);
+
+                System.out.printf("  reading %d corpus file(s) from %s%n", files.size(), corpus);
+
+                try (Corpus.Reader pages = Corpus.read(files)) {
+
+                    ParallelIndexer.index(pages, Function.identity(), parser, writer, threads, maxDocs);
+                }
+
+            } else if (!warcs.isEmpty()) {
+
+                // Parsing HTML, extraction and filtering run on the workers.
+                try (CommonCrawlSource.Records records = new CommonCrawlSource(warcs, System.out::println).records()) {
+
+                    ParallelIndexer.index(records, CommonCrawlSource::toDocument, parser, writer, threads, maxDocs);
+                }
+
+                System.out.println("  " + CommonCrawlSource.filterSummary());
+
+            } else if (!wikiDumps.isEmpty()) {
 
                 // Cleaning wikitext is the expensive per-page step, so it runs on the workers.
                 try (DumpSequence pages = new DumpSequence(wikiDumps, threads)) {
@@ -269,7 +322,8 @@ final class BuildIndexCommand {
     private static IllegalArgumentException usage(String problem) {
 
         return new IllegalArgumentException(problem + System.lineSeparator()
-                + "usage: --build-index --out <dir> (--wiki <dump|dir>... | --folder <dir> | --html <dir>)"
+                + "usage: --build-index --out <dir> (--wiki <dump|dir>... | --warc <file|url>..."
+                + " | --cc <crawl> [--cc-files n] [--cc-start k] | --corpus <dir> | --folder <dir> | --html <dir>)"
                 + " [--max-docs n] [--mem-mb n] [--threads n]");
     }
 }

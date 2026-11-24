@@ -66,6 +66,13 @@ public class Main {
             return;
         }
 
+        if (args.length > 0 && args[0].equals("--fetch-cc")) {
+
+            FetchCommand.run(Arrays.copyOfRange(args, 1, args.length));
+
+            return;
+        }
+
         if (args.length > 0 && args[0].equals("--bench")) {
 
             BenchmarkCommand.run(Arrays.copyOfRange(args, 1, args.length));
@@ -473,8 +480,13 @@ public class Main {
                   --serve [port]    start the HTTP search API (default $PORT or 8080)
 
                 Build an on-disk index (for corpora larger than memory):
-                  --build-index --out <dir> (--wiki <dump|dir>... | --folder <dir> | --html <dir>)
+                  --build-index --out <dir> (--corpus <dir> | --wiki <dump|dir>... | --warc <file|url>...
+                                | --cc <crawl> --cc-files n | --folder <dir> | --html <dir>)
                                 [--max-docs n] [--mem-mb n] [--threads n]
+
+                Download Common Crawl pages into a local corpus (resumable):
+                  --fetch-cc --cc <crawl> --cc-files n [--cc-start k] --corpus <dir>
+                             [--parallel-files p] [--threads t]
 
                 Benchmark query latency on an on-disk index:
                   --bench --index <dir> [--queries n] [--threads n] [--k n]""");
