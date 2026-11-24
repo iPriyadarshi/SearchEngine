@@ -52,9 +52,18 @@ public final class WebRanker {
                           double pageRank, double domain, double titleCoverage, double exactTitle,
                           double homepage, double depth) {
 
+        /**
+         * Tuned with {@code --eval --tune} on a 246k-page index (top-5,000-site
+         * crawl, two Common Crawl files, 217k Wikipedia articles): MRR@10 0.692
+         * to 0.804 over 65 judged queries. URL and anchor clauses are off at
+         * retrieval because, with few links between the sampled pages, they
+         * mostly promoted pages that merely mention a site in their URL and
+         * Wikipedia articles over the sites themselves. Re-tune on larger,
+         * link-dense corpora.
+         */
         public static Weights defaults() {
 
-            return new Weights(2.0, 1.5, 1.5, 0.5, 3.0, 2.0, 2.0, 3.0, 0.3);
+            return new Weights(2.0, 0.0, 0.0, 0.5, 3.0, 4.0, 1.0, 3.0, 1.2);
         }
 
         public Weights with(int index, double value) {

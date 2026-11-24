@@ -20,7 +20,7 @@ import java.util.function.Function;
  * {@code --eval}: measures ranking quality on a set of judged queries.
  *
  * <pre>
- * --eval --index &lt;dir&gt; [--queries eval/web-queries.tsv] [--verbose] [--tune]
+ * --eval --index &lt;dir&gt; [--queries eval/web-queries.tsv] [--verbose] [--tune] [--weights w1,...,w9]
  * </pre>
  *
  * Query file: one query per line, a tab, then the acceptable answers
@@ -64,6 +64,8 @@ final class EvalCommand {
 
         boolean tune = false;
 
+        WebRanker.Weights weights = WebRanker.Weights.defaults();
+
         for (int i = 0; i < args.length; i++) {
 
             switch (args[i]) {
@@ -75,6 +77,8 @@ final class EvalCommand {
                 case "--verbose" -> verbose = true;
 
                 case "--tune" -> tune = true;
+
+                case "--weights" -> weights = parseWeights(args[++i]);
 
                 default -> throw new IllegalArgumentException("unknown option " + args[i]);
             }
@@ -89,7 +93,7 @@ final class EvalCommand {
 
         try (DiskIndex index = DiskIndex.open(dir)) {
 
-            WebRanker ranker = new WebRanker(index, Main.buildParser(), WebRanker.Weights.defaults());
+            WebRanker ranker = new WebRanker(index, Main.buildParser(), weights);
 
             TopKSearcher body = new TopKSearcher(index);
 
@@ -131,6 +135,29 @@ final class EvalCommand {
                 tune(index, judged, ranker);
             }
         }
+    }
+
+    /**
+     * "2,1.5,1.5,0.5,3,2,2,3,0.3" in {@link WebRanker.Weights#NAMES} order.
+     */
+    static WebRanker.Weights parseWeights(String csv) {
+
+        String[] parts = csv.split(",");
+
+        if (parts.length != WebRanker.Weights.NAMES.length) {
+
+            throw new IllegalArgumentException("--weights needs " + WebRanker.Weights.NAMES.length + " values: "
+                    + String.join(",", WebRanker.Weights.NAMES));
+        }
+
+        WebRanker.Weights w = WebRanker.Weights.defaults();
+
+        for (int i = 0; i < parts.length; i++) {
+
+            w = w.with(i, Double.parseDouble(parts[i].strip()));
+        }
+
+        return w;
     }
 
     private static List<String> analyze(String text) {
