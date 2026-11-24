@@ -88,10 +88,10 @@ public class SearchHttpServerTest {
 
         assertTrue(response.body().contains("<title>sift</title>"));
 
-        // the UI's tabs name the API endpoints it calls ("/" + mode)
+        // the UI picks the endpoint ("/" + mode) from the query, so it must know all three
         for (String mode : new String[]{"search", "phrase", "bool"}) {
 
-            assertTrue(response.body().contains("data-mode=\"" + mode + "\""), mode);
+            assertTrue(response.body().contains("\"" + mode + "\""), mode);
         }
     }
 

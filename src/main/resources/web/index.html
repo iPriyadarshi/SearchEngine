@@ -273,7 +273,7 @@
             display: flex;
             align-items: center;
             gap: 28px;
-            padding: 18px var(--gutter) 0;
+            padding: 18px var(--gutter);
         }
 
         .topbar .wordmark {
@@ -297,72 +297,6 @@
             flex: none;
         }
 
-        .controls {
-            display: flex;
-            align-items: flex-end;
-            gap: 24px;
-            /* Tabs carry 12px of inner padding; pull them left so their text sits on the rail. */
-            padding: 0 var(--gutter) 0 calc(var(--rail) - 12px);
-        }
-
-        .tabs {
-            display: flex;
-            gap: 4px;
-        }
-
-        .tab {
-            position: relative;
-            padding: 14px 12px 11px;
-            border: 0;
-            background: none;
-            color: var(--muted);
-            font: inherit;
-            font-size: 14px;
-            cursor: pointer;
-        }
-
-        .tab:hover {
-            color: var(--ink);
-        }
-
-        .tab[aria-selected="true"] {
-            color: var(--ink);
-            font-weight: 600;
-        }
-
-        .tab[aria-selected="true"]::after {
-            content: "";
-            position: absolute;
-            left: 12px;
-            right: 12px;
-            bottom: -1px;
-            height: 3px;
-            border-radius: 3px 3px 0 0;
-            background: var(--accent);
-        }
-
-        .ranking {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            margin-left: auto;
-            padding-bottom: 10px;
-            color: var(--muted);
-            font-size: 13px;
-        }
-
-        .ranking select {
-            border: 0;
-            background: transparent;
-            color: var(--ink);
-            font: inherit;
-            cursor: pointer;
-        }
-
-        .ranking[hidden] {
-            display: none;
-        }
-
         main.results-main {
             padding: 0 var(--gutter) 48px var(--rail);
             max-width: calc(var(--rail) + 652px + var(--gutter));
@@ -373,18 +307,6 @@
             color: var(--muted);
             font-size: 13px;
             min-height: 20px;
-        }
-
-        .notice {
-            margin: 0 0 22px;
-            padding: 12px 14px;
-            border-left: 3px solid var(--accent);
-            background: var(--hover);
-            font-size: 14px;
-        }
-
-        .notice code {
-            font-size: 13px;
         }
 
         .results {
@@ -529,7 +451,7 @@
             .topbar-row {
                 flex-wrap: wrap;
                 gap: 12px 16px;
-                padding: 12px 16px 0;
+                padding: 12px 16px;
             }
 
             .topbar .wordmark {
@@ -543,25 +465,11 @@
                 flex-basis: 100%;
             }
 
-            .controls {
-                padding: 0 16px;
-                overflow-x: auto;
-                gap: 12px;
-            }
-
             main.results-main {
                 padding: 0 16px 40px;
                 max-width: none;
             }
 
-            .tab {
-                padding: 12px 10px 9px;
-                white-space: nowrap;
-            }
-
-            .ranking {
-                white-space: nowrap;
-            }
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -623,26 +531,10 @@
                 <svg><use href="#icon-theme"/></svg>
             </button>
         </div>
-        <div class="controls">
-            <div class="tabs" role="tablist" aria-label="Search type">
-                <button class="tab" role="tab" data-mode="search">All</button>
-                <button class="tab" role="tab" data-mode="phrase">Exact phrase</button>
-                <button class="tab" role="tab" data-mode="bool">Boolean</button>
-            </div>
-            <label class="ranking" id="ranking">
-                Ranked by
-                <select id="ranker">
-                    <option value="bm25">BM25</option>
-                    <option value="tfidf">TF-IDF</option>
-                    <option value="cosine">Cosine</option>
-                </select>
-            </label>
-        </div>
     </header>
 
     <main class="results-main">
         <p class="stats" id="stats" role="status" aria-live="polite"></p>
-        <p class="notice" id="notice" hidden></p>
         <ol class="results" id="results"></ol>
         <nav class="pager" id="pager" aria-label="Pages"></nav>
     </main>
@@ -658,7 +550,7 @@
     const IGNORED_WORDS = new Set(["a", "an", "the", "is", "are", "was", "were", "in", "on", "at", "to",
         "for", "of", "and", "or", "not", "this", "that", "these", "those", "be", "been", "being"]);
 
-    const state = { q: "", mode: "search", ranker: "bm25", page: 1 };
+    const state = { q: "", page: 1 };
     let requestId = 0;
 
     // ---------- theme ----------
@@ -734,29 +626,17 @@
         (state.q ? topSearch : homeSearch).input.focus();
     });
 
-    // ---------- tabs and ranking ----------
-
-    const tabs = Array.from(document.querySelectorAll(".tab"));
-    const rankerSelect = document.getElementById("ranker");
-
-    tabs.forEach(tab => tab.addEventListener("click", () => navigate({ mode: tab.dataset.mode, page: 1 })));
-    rankerSelect.addEventListener("change", () => navigate({ ranker: rankerSelect.value, page: 1 }));
-
     // ---------- URL state ----------
 
     function readUrl() {
         const params = new URLSearchParams(location.search);
         state.q = (params.get("q") || "").trim();
-        state.mode = ["search", "phrase", "bool"].includes(params.get("mode")) ? params.get("mode") : "search";
-        state.ranker = ["bm25", "tfidf", "cosine"].includes(params.get("ranker")) ? params.get("ranker") : "bm25";
         state.page = Math.max(1, parseInt(params.get("page"), 10) || 1);
     }
 
     function writeUrl(replace) {
         const params = new URLSearchParams();
         if (state.q) params.set("q", state.q);
-        if (state.q && state.mode !== "search") params.set("mode", state.mode);
-        if (state.q && state.ranker !== "bm25") params.set("ranker", state.ranker);
         if (state.q && state.page > 1) params.set("page", state.page);
         const url = params.toString() ? "/?" + params : "/";
         history[replace ? "replaceState" : "pushState"](null, "", url);
@@ -776,7 +656,6 @@
     const home = document.getElementById("home");
     const resultsPage = document.getElementById("results-page");
     const stats = document.getElementById("stats");
-    const notice = document.getElementById("notice");
     const list = document.getElementById("results");
     const pager = document.getElementById("pager");
 
@@ -793,26 +672,36 @@
         }
 
         topSearch.set(state.q);
-        tabs.forEach(tab => tab.setAttribute("aria-selected", String(tab.dataset.mode === state.mode)));
-        document.getElementById("ranking").hidden = state.mode !== "search";
-        rankerSelect.value = state.ranker;
         runSearch();
+    }
+
+    // The kind of search is read from the query, as on web search engines:
+    // a fully quoted query is an exact phrase, and capitalised AND / OR / NOT
+    // make a boolean query. Everything else is a ranked keyword search.
+    function detectMode(query) {
+        if (/\b(AND|OR|NOT)\b/.test(query)) return "bool";
+        if (/^"[^"]+"$/.test(query.trim())) return "phrase";
+        return "search";
     }
 
     async function runSearch() {
         const id = ++requestId;
         const offset = Math.min((state.page - 1) * PAGE_SIZE, MAX_RESULTS - PAGE_SIZE);
         const params = new URLSearchParams({ q: state.q, limit: PAGE_SIZE, offset: offset });
-        if (state.mode === "search") params.set("ranker", state.ranker);
+        let mode = detectMode(state.q);
 
         stats.textContent = "";
-        notice.hidden = true;
         pager.innerHTML = "";
         showSkeleton();
 
         let data;
         try {
-            const response = await fetch("/" + state.mode + "?" + params);
+            let response = await fetch("/" + mode + "?" + params);
+            // An incomplete boolean expression ("rock AND") runs as a keyword search instead.
+            if (mode === "bool" && response.status === 400) {
+                mode = "search";
+                response = await fetch("/search?" + params);
+            }
             data = await response.json();
             if (!response.ok) throw new Error(data.error || "the server returned " + response.status);
         } catch (error) {
@@ -821,7 +710,7 @@
         }
 
         if (id !== requestId) return;
-        showResults(data, offset);
+        showResults(data, offset, mode);
     }
 
     function showSkeleton() {
@@ -831,7 +720,7 @@
             '<span style="width:96%"></span><span style="width:78%"></span></li>').join("");
     }
 
-    function showResults(data, offset) {
+    function showResults(data, offset, mode) {
         const results = data.results || [];
         list.className = "results";
         list.innerHTML = "";
@@ -839,22 +728,18 @@
         const took = typeof data.tookMs === "number" ? formatMillis(data.tookMs) : "";
         if (results.length === 0) {
             stats.textContent = took ? "No results (" + took + ")" : "";
-            showEmpty();
+            showEmpty(mode);
             return;
         }
 
-        const first = offset + 1;
-        const last = offset + results.length;
+        const pagePrefix = state.page > 1 ? "Page " + state.page + " of " : "";
         if (typeof data.total === "number") {
-            const pagePrefix = state.page > 1 ? "Page " + state.page + " of " : "";
-            stats.textContent = pagePrefix + plural(data.total, "result") + " (" + took + ")";
+            const count = mode === "phrase"
+                ? plural(data.total, "exact match", "exact matches")
+                : plural(data.total, "result", "results");
+            stats.textContent = pagePrefix + count + " (" + took + ")";
         } else {
-            stats.textContent = "Results " + first + "-" + last + ", best first (" + took + ")";
-        }
-
-        if (state.mode === "bool") {
-            notice.hidden = false;
-            notice.innerHTML = "Boolean results match exactly and are listed in index order, not by relevance.";
+            stats.textContent = (state.page > 1 ? "Page " + state.page : "Top results") + " (" + took + ")";
         }
 
         const terms = highlightTerms(state.q);
@@ -893,13 +778,15 @@
         return li;
     }
 
-    function showEmpty() {
-        const tips = state.mode === "phrase"
-            ? ["Check the spelling, or drop a word from the phrase.", "Switch to All to match the words in any order."]
-            : state.mode === "bool"
-                ? ["Combine words with AND, OR and NOT, e.g. <code>jazz AND NOT rock</code>.",
-                   "A word joined with AND must appear in every result."]
-                : ["Check the spelling.", "Try fewer or more general words."];
+    function showEmpty(mode) {
+        const tips = mode === "phrase"
+            ? ["Check the spelling, or drop a word from the phrase.",
+               "Remove the quotes to match the words in any order."]
+            : mode === "bool"
+                ? ["A word joined with AND must appear in every result; try OR instead.",
+                   "Check the spelling of each word."]
+                : ["Check the spelling.", "Try fewer or more general words.",
+                   "Put words in quotes to find an exact phrase, e.g. <code>\"black hole\"</code>."];
         list.className = "results";
         list.innerHTML = '<li class="empty"><h2>No documents match <b>' + escapeHtml(state.q) + "</b></h2><ul>" +
             tips.map(tip => "<li>" + tip + "</li>").join("") + "</ul></li>";
@@ -907,9 +794,7 @@
 
     function showError(message) {
         list.className = "results";
-        const hint = state.mode === "bool"
-            ? "<li>Boolean searches need complete expressions, e.g. <code>(paris OR london) AND museum</code>.</li>"
-            : "<li>Check that the search server is running, then search again.</li>";
+        const hint = "<li>Check that the search server is running, then search again.</li>";
         list.innerHTML = '<li class="empty error"><h2>This search did not run: ' + escapeHtml(message) +
             "</h2><ul>" + hint + "</ul></li>";
     }
@@ -993,8 +878,8 @@
         return ms < 1 ? ms.toFixed(2) + " ms" : ms < 100 ? ms.toFixed(1) + " ms" : Math.round(ms) + " ms";
     }
 
-    function plural(count, word) {
-        return count.toLocaleString() + " " + word + (count === 1 ? "" : "s");
+    function plural(count, one, many) {
+        return count.toLocaleString() + " " + (count === 1 ? one : many);
     }
 
     function escapeHtml(value) {
