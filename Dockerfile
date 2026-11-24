@@ -11,7 +11,8 @@ RUN mvn -q -B package -DskipTests
 # ---- run ----
 # Ubuntu-based JRE: ONNX Runtime's native library (semantic search) needs glibc.
 FROM eclipse-temurin:26-jre-noble
-RUN groupadd --system app && useradd --system --gid app --home /app app \
+# Fixed ids so bind-mounted data/ and indexes/ can be chowned on the host (see DEPLOY.md).
+RUN groupadd --system --gid 10001 app && useradd --system --uid 10001 --gid app --home /app app \
     && mkdir -p /data /indexes /models && chown app:app /data /indexes
 WORKDIR /app
 COPY --from=build /src/target/searchengine.jar app.jar

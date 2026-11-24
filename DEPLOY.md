@@ -33,6 +33,7 @@ curl -fsSL https://get.docker.com | sh
 git clone https://github.com/iPriyadarshi/SearchEngine.git sift && cd sift
 cp .env.example .env            # then set DOMAIN=your.domain
 mkdir -p data indexes
+sudo chown -R 10001:10001 data indexes   # the containers run as uid 10001
 ```
 
 Point your domain's DNS `A`/`AAAA` record at the server and open ports 80 and
