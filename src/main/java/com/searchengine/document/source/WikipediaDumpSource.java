@@ -2,7 +2,6 @@ package com.searchengine.document.source;
 
 import com.searchengine.api.DocumentSource;
 import com.searchengine.document.model.Document;
-import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream;
 
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
@@ -17,6 +16,7 @@ import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Spliterator;
 import java.util.Spliterators;
 import java.util.stream.Stream;
@@ -28,10 +28,14 @@ import java.util.zip.GZIPInputStream;
  * {@code enwiki-latest-pages-articles.xml.bz2}).
  * <p>
  * The dump is read with a StAX pull parser, so only one page is in memory at a
- * time. {@code .bz2} (including multistream) and {@code .gz} dumps are
- * decompressed on the fly. Only main-namespace articles are emitted; redirects
- * and talk/user/template pages are skipped. Each article's wikitext is
- * converted to plain text with {@link WikitextCleaner}.
+ * time. {@code .bz2} and {@code .gz} dumps are decompressed on the fly;
+ * multistream {@code .bz2} dumps are decompressed on several threads (see
+ * {@link ParallelBzip2InputStream}). Only main-namespace articles are emitted;
+ * redirects and talk/user/template pages are skipped. Each article's wikitext
+ * is converted to plain text with {@link WikitextCleaner}.
+ * <p>
+ * {@link #stream()} cleans pages on the calling thread. For parallel indexing
+ * use {@link #rawPages()} and run {@link #toDocument(WikiPage)} on workers.
  */
 public class WikipediaDumpSource implements DocumentSource {
 
@@ -43,6 +47,14 @@ public class WikipediaDumpSource implements DocumentSource {
 
     private final long maxDocuments;
 
+    private final int decompressionThreads;
+
+    /**
+     * An article as it appears in the dump, before markup is removed.
+     */
+    public record WikiPage(String title, String wikitext, String url) {
+    }
+
     public WikipediaDumpSource(Path dump) {
 
         this(dump, Long.MAX_VALUE);
@@ -53,9 +65,19 @@ public class WikipediaDumpSource implements DocumentSource {
      */
     public WikipediaDumpSource(Path dump, long maxDocuments) {
 
+        this(dump, maxDocuments, 1);
+    }
+
+    /**
+     * @param decompressionThreads threads for decompressing multistream bzip2 dumps
+     */
+    public WikipediaDumpSource(Path dump, long maxDocuments, int decompressionThreads) {
+
         this.dump = dump;
 
         this.maxDocuments = maxDocuments;
+
+        this.decompressionThreads = decompressionThreads;
     }
 
     /**
@@ -74,13 +96,49 @@ public class WikipediaDumpSource implements DocumentSource {
     @Override
     public Stream<Document> stream() throws IOException {
 
+        int[] nextId = {0};
+
+        return rawPages(Long.MAX_VALUE)
+                .map(WikipediaDumpSource::toDocument)
+                .filter(Objects::nonNull)
+                .limit(maxDocuments)
+                .map(doc -> new Document(nextId[0]++, doc.getTitle(), doc.getContent(), doc.getPath()));
+    }
+
+    /**
+     * Stream articles without cleaning them, at most {@code maxDocuments}.
+     */
+    public Stream<WikiPage> rawPages() throws IOException {
+
+        return rawPages(maxDocuments);
+    }
+
+    /**
+     * Convert a raw page into an indexable document, or {@code null} if the
+     * page has no text left after cleaning. Thread-safe. The document id is 0;
+     * indexers assign their own ids.
+     */
+    public static Document toDocument(WikiPage page) {
+
+        String text = WikitextCleaner.clean(page.wikitext());
+
+        if (text.isEmpty()) {
+
+            return null;
+        }
+
+        return new Document(0, page.title(), page.title() + "\n\n" + text, page.url());
+    }
+
+    private Stream<WikiPage> rawPages(long limit) throws IOException {
+
         InputStream in = open(dump);
 
         try {
 
             XMLStreamReader reader = newFactory().createXMLStreamReader(in, "UTF-8");
 
-            PageIterator pages = new PageIterator(reader);
+            PageIterator pages = new PageIterator(reader, limit);
 
             return StreamSupport
                     .stream(Spliterators.spliteratorUnknownSize(pages, Spliterator.ORDERED | Spliterator.NONNULL), false)
@@ -106,17 +164,16 @@ public class WikipediaDumpSource implements DocumentSource {
         }
     }
 
-    private static InputStream open(Path file) throws IOException {
-
-        InputStream raw = new BufferedInputStream(Files.newInputStream(file), BUFFER_SIZE);
+    private InputStream open(Path file) throws IOException {
 
         String name = file.getFileName().toString().toLowerCase();
 
         if (name.endsWith(".bz2")) {
 
-            // true = keep reading across concatenated streams (multistream dumps).
-            return new BufferedInputStream(new BZip2CompressorInputStream(raw, true), BUFFER_SIZE);
+            return new BufferedInputStream(ParallelBzip2InputStream.open(file, decompressionThreads), BUFFER_SIZE);
         }
+
+        InputStream raw = new BufferedInputStream(Files.newInputStream(file), BUFFER_SIZE);
 
         if (name.endsWith(".gz")) {
 
@@ -154,21 +211,25 @@ public class WikipediaDumpSource implements DocumentSource {
     /**
      * Pulls one article at a time from the XML stream.
      */
-    private final class PageIterator implements Iterator<Document> {
+    private final class PageIterator implements Iterator<WikiPage> {
 
         private final XMLStreamReader reader;
 
+        private final long limit;
+
         private String urlPrefix = DEFAULT_URL_PREFIX;
 
-        private Document next;
+        private WikiPage next;
 
-        private int nextId = 0;
+        private long emitted = 0;
 
         private boolean finished = false;
 
-        PageIterator(XMLStreamReader reader) {
+        PageIterator(XMLStreamReader reader, long limit) {
 
             this.reader = reader;
+
+            this.limit = limit;
         }
 
         @Override
@@ -185,23 +246,23 @@ public class WikipediaDumpSource implements DocumentSource {
         }
 
         @Override
-        public Document next() {
+        public WikiPage next() {
 
             if (!hasNext()) {
 
                 throw new NoSuchElementException();
             }
 
-            Document doc = next;
+            WikiPage page = next;
 
             next = null;
 
-            return doc;
+            return page;
         }
 
-        private Document readNextArticle() {
+        private WikiPage readNextArticle() {
 
-            if (nextId >= maxDocuments) {
+            if (emitted >= limit) {
 
                 return null;
             }
@@ -223,11 +284,13 @@ public class WikipediaDumpSource implements DocumentSource {
 
                     } else if (element.equals("page")) {
 
-                        Document doc = readPage();
+                        WikiPage page = readPage();
 
-                        if (doc != null) {
+                        if (page != null) {
 
-                            return doc;
+                            emitted++;
+
+                            return page;
                         }
                     }
                 }
@@ -242,9 +305,9 @@ public class WikipediaDumpSource implements DocumentSource {
 
         /**
          * Reads the current {@code <page>} element; returns {@code null} for
-         * pages that are not indexable articles.
+         * pages that are not articles.
          */
-        private Document readPage() throws XMLStreamException {
+        private WikiPage readPage() throws XMLStreamException {
 
             String title = null;
 
@@ -289,16 +352,7 @@ public class WikipediaDumpSource implements DocumentSource {
                 return null;
             }
 
-            String text = WikitextCleaner.clean(wikitext);
-
-            if (text.isEmpty()) {
-
-                return null;
-            }
-
-            String url = urlPrefix + title.replace(' ', '_');
-
-            return new Document(nextId++, title, title + "\n\n" + text, url);
+            return new WikiPage(title, wikitext, urlPrefix + title.replace(' ', '_'));
         }
 
         /**

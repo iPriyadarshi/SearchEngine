@@ -405,6 +405,6 @@ public class Main {
 
                 Build an on-disk index (for corpora larger than memory):
                   --build-index --out <dir> (--wiki <dump> | --folder <dir> | --html <dir>)
-                                [--max-docs n] [--mem-mb n]""");
+                                [--max-docs n] [--mem-mb n] [--threads n]""");
     }
 }

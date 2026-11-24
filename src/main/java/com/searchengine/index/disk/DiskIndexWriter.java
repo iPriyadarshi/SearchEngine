@@ -121,14 +121,21 @@ public class DiskIndexWriter implements Closeable {
      */
     public int add(Document doc) throws IOException {
 
+        return add(doc, parser.parse(doc));
+    }
+
+    /**
+     * Buffer a document that was already analyzed (e.g. on a worker thread).
+     * Not thread-safe: calls must come from a single thread, in doc-id order.
+     */
+    public int add(Document doc, List<String> tokens) throws IOException {
+
         if (closed) {
 
             throw new IllegalStateException("Writer is closed");
         }
 
         int docId = docLengths.size();
-
-        List<String> tokens = parser.parse(doc);
 
         docLengths.add(tokens.size());
 
