@@ -19,6 +19,7 @@ import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -30,13 +31,15 @@ import java.util.concurrent.Executors;
  *
  * <pre>
  * GET /                                                  responsive web UI
- * GET /search?q=...&amp;ranker=bm25|tfidf|cosine&amp;limit=N   ranked search
- * GET /phrase?q=...&amp;limit=N                             phrase search
- * GET /bool?q=... AND ...&amp;limit=N                       boolean search
+ * GET /search?q=...&amp;ranker=bm25|tfidf|cosine&amp;limit=N&amp;offset=M   ranked search
+ * GET /phrase?q=...&amp;limit=N&amp;offset=M                            phrase search
+ * GET /bool?q=... AND ...&amp;limit=N&amp;offset=M                      boolean search
  * GET /health                                            liveness probe
  * </pre>
  *
  * The search endpoints return JSON; the root serves the single-page UI.
+ * {@code offset} pages through results; like web search engines, only the
+ * first {@value #MAX_WINDOW} results of a query can be paged to.
  * Requests are handled on a thread pool, so slow queries do not block others.
  */
 public class SearchHttpServer {
@@ -44,6 +47,8 @@ public class SearchHttpServer {
     private static final int DEFAULT_LIMIT = 10;
 
     static final int MAX_LIMIT = 100;
+
+    static final int MAX_WINDOW = 500;
 
     private final HttpServer server;
 
@@ -184,7 +189,9 @@ public class SearchHttpServer {
 
         String ranker = params.getOrDefault("ranker", backend.defaultRanker()).toLowerCase(Locale.ROOT);
 
-        respond(exchange, 200, toJson(q, backend.search(q, ranker, limit(params))));
+        Window window = window(params);
+
+        respond(exchange, 200, toJson(q, window.slice(backend.search(q, ranker, window.end())), window));
     }
 
     private void handlePhrase(HttpExchange exchange) throws IOException {
@@ -193,7 +200,9 @@ public class SearchHttpServer {
 
         String q = params.getOrDefault("q", "");
 
-        respond(exchange, 200, toJson(q, backend.phrase(q, limit(params))));
+        Window window = window(params);
+
+        respond(exchange, 200, toJson(q, window.slice(backend.phrase(q, window.end())), window));
     }
 
     private void handleBool(HttpExchange exchange) throws IOException {
@@ -202,24 +211,52 @@ public class SearchHttpServer {
 
         String q = params.getOrDefault("q", "");
 
-        respond(exchange, 200, toJson(q, backend.bool(q, limit(params))));
+        Window window = window(params);
+
+        respond(exchange, 200, toJson(q, window.slice(backend.bool(q, window.end())), window));
     }
 
-    private int limit(Map<String, String> params) {
+    /**
+     * The requested page of results: hits [offset, offset + limit).
+     */
+    private record Window(int offset, int limit) {
 
-        try {
+        int end() {
 
-            int requested = Integer.parseInt(params.getOrDefault("limit", String.valueOf(DEFAULT_LIMIT)));
+            return offset + limit;
+        }
 
-            return Math.clamp(requested, 1, MAX_LIMIT);
+        Hits slice(Hits all) {
 
-        } catch (NumberFormatException e) {
+            List<Hit> hits = all.hits();
 
-            return DEFAULT_LIMIT;
+            return new Hits(all.mode(), hits.subList(Math.min(offset, hits.size()), hits.size()),
+                    all.total(), all.tookMillis());
         }
     }
 
-    private String toJson(String query, Hits result) {
+    private Window window(Map<String, String> params) {
+
+        int limit = Math.clamp(intParam(params, "limit", DEFAULT_LIMIT), 1, MAX_LIMIT);
+
+        int offset = Math.clamp(intParam(params, "offset", 0), 0, MAX_WINDOW - limit);
+
+        return new Window(offset, limit);
+    }
+
+    private static int intParam(Map<String, String> params, String name, int fallback) {
+
+        try {
+
+            return Integer.parseInt(params.getOrDefault(name, String.valueOf(fallback)));
+
+        } catch (NumberFormatException e) {
+
+            return fallback;
+        }
+    }
+
+    private String toJson(String query, Hits result, Window window) {
 
         StringBuilder sb = new StringBuilder();
 
@@ -228,6 +265,8 @@ public class SearchHttpServer {
         sb.append("\"mode\":\"").append(Json.escape(result.mode())).append("\",");
 
         sb.append("\"count\":").append(result.hits().size()).append(",");
+
+        sb.append("\"offset\":").append(window.offset()).append(",");
 
         if (result.total() >= 0) {
 

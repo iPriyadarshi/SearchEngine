@@ -1,374 +1,1068 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Search Engine</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>sift</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Public+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #0f172a;
-            --panel: #1e293b;
-            --panel-2: #273449;
-            --text: #e2e8f0;
-            --muted: #94a3b8;
-            --accent: #38bdf8;
-            --accent-strong: #0ea5e9;
-            --border: #334155;
-            --radius: 12px;
+            --paper: #fcfcfd;
+            --surface: #ffffff;
+            --ink: #1c2230;
+            --muted: #5e6677;
+            --line: #e3e6ec;
+            --field: #ffffff;
+            --field-line: #d4d8e0;
+            --link: #2b44b8;
+            --visited: #6b3fa8;
+            --accent: #127a72;
+            --hover: #f1f3f6;
+            --error: #b42318;
+            --shadow: 0 1px 6px rgba(28, 34, 48, 0.12);
+            /* Results-page left edge: page gutter + wordmark + gap. Tabs and results align to it. */
+            --gutter: 24px;
+            --mark: 86px;
+            --rail: calc(var(--gutter) + var(--mark) + 28px);
         }
 
-        * { box-sizing: border-box; }
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --paper: #15181e;
+                --surface: #1b1f27;
+                --ink: #e6e8ee;
+                --muted: #9aa2b1;
+                --line: #2a303b;
+                --field: #1f242d;
+                --field-line: #353c49;
+                --link: #9db0ff;
+                --visited: #c7a6f2;
+                --accent: #4fc2b6;
+                --hover: #232833;
+                --error: #ff8a7a;
+                --shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
+            }
+        }
+
+        :root[data-theme="dark"] {
+            --paper: #15181e;
+            --surface: #1b1f27;
+            --ink: #e6e8ee;
+            --muted: #9aa2b1;
+            --line: #2a303b;
+            --field: #1f242d;
+            --field-line: #353c49;
+            --link: #9db0ff;
+            --visited: #c7a6f2;
+            --accent: #4fc2b6;
+            --hover: #232833;
+            --error: #ff8a7a;
+            --shadow: 0 1px 8px rgba(0, 0, 0, 0.45);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
 
         html, body {
             margin: 0;
-            padding: 0;
-            background: var(--bg);
-            color: var(--text);
-            font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: var(--paper);
+            color: var(--ink);
+            font-family: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            font-size: 15px;
             line-height: 1.5;
+            -webkit-text-size-adjust: 100%;
         }
 
-        .page {
+        a {
+            color: var(--link);
+        }
+
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+        }
+
+        /* ---------- wordmark ---------- */
+
+        .wordmark {
+            font-family: "Fraunces", Georgia, serif;
+            font-weight: 600;
+            font-variation-settings: "opsz" 144;
+            color: var(--ink);
+            text-decoration: none;
+            letter-spacing: -0.03em;
+            line-height: 1;
+            display: inline-flex;
+            align-items: baseline;
+            user-select: none;
+        }
+
+        /* The dotless i carries a square "tittle": one posting block. */
+        .wordmark .i {
+            position: relative;
+        }
+
+        .wordmark .i::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 0.19em;
+            width: 0.13em;
+            height: 0.13em;
+            transform: translateX(-50%);
+            background: var(--accent);
+        }
+
+        /* ---------- search field ---------- */
+
+        .search-form {
+            position: relative;
             width: 100%;
-            max-width: 820px;
-            margin: 0 auto;
-            padding: 20px 16px 64px;
         }
 
-        header h1 {
-            font-size: 1.5rem;
-            margin: 8px 0 2px;
-        }
-
-        header p {
-            margin: 0 0 20px;
-            color: var(--muted);
-            font-size: 0.9rem;
-        }
-
-        form {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 14px;
+        .search-field {
             display: flex;
-            flex-direction: column;
-            gap: 12px;
-            position: sticky;
-            top: 12px;
-            z-index: 5;
+            align-items: center;
+            height: 48px;
+            padding: 0 6px 0 18px;
+            background: var(--field);
+            border: 1px solid var(--field-line);
+            border-radius: 24px;
+            transition: box-shadow 120ms ease, border-color 120ms ease;
         }
 
-        .search-row {
-            display: flex;
-            gap: 10px;
-            flex-direction: column;
+        .search-field:hover,
+        .search-field:focus-within {
+            box-shadow: var(--shadow);
+            border-color: transparent;
         }
 
-        input[type="text"] {
+        .search-field input {
             flex: 1;
             min-width: 0;
-            padding: 12px 14px;
-            font-size: 1rem;
-            color: var(--text);
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            border-radius: 10px;
+            height: 100%;
+            border: 0;
+            background: transparent;
+            color: var(--ink);
+            font: inherit;
+            font-size: 16px;
             outline: none;
         }
 
-        input[type="text"]:focus { border-color: var(--accent); }
+        .search-field input::-webkit-search-cancel-button {
+            display: none;
+        }
 
-        button.search-btn {
-            padding: 12px 18px;
-            font-size: 1rem;
-            font-weight: 600;
-            color: #06283d;
-            background: var(--accent);
-            border: none;
-            border-radius: 10px;
+        .icon-button {
+            display: inline-grid;
+            place-items: center;
+            width: 38px;
+            height: 38px;
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+            color: var(--muted);
             cursor: pointer;
-            transition: background 0.15s ease;
         }
 
-        button.search-btn:hover { background: var(--accent-strong); }
-
-        button.search-btn:disabled { opacity: 0.6; cursor: default; }
-
-        .options {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            align-items: center;
+        .icon-button:hover {
+            background: var(--hover);
+            color: var(--ink);
         }
 
-        .field {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            flex: 1;
-            min-width: 130px;
+        .icon-button svg {
+            width: 20px;
+            height: 20px;
         }
 
-        .field label {
-            font-size: 0.72rem;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            color: var(--muted);
+        .clear-button[hidden] {
+            display: none;
         }
 
-        select {
-            padding: 9px 10px;
-            font-size: 0.92rem;
-            color: var(--text);
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            outline: none;
+        .divider {
+            width: 1px;
+            height: 24px;
+            background: var(--line);
+            margin: 0 4px;
         }
 
-        .hint {
-            font-size: 0.8rem;
-            color: var(--muted);
-            min-height: 1.1em;
-        }
-
-        .status {
-            margin: 18px 2px 8px;
-            color: var(--muted);
-            font-size: 0.9rem;
-        }
-
-        .status.error { color: #fca5a5; }
-
-        ul.results {
-            list-style: none;
-            margin: 8px 0 0;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        li.result {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 14px 16px;
-        }
-
-        .result-head {
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .result-path {
-            font-weight: 600;
+        .submit-button {
             color: var(--accent);
-            word-break: break-all;
         }
 
-        a.result-path {
+        /* ---------- home ---------- */
+
+        .home {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0 16px;
+        }
+
+        .home .wordmark {
+            font-size: clamp(64px, 14vw, 104px);
+            margin: max(14vh, 64px) 0 32px;
+        }
+
+        .home-search {
+            width: 100%;
+            max-width: 584px;
+        }
+
+        .home-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 26px;
+        }
+
+        .home-actions button {
+            height: 36px;
+            padding: 0 16px;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: var(--surface);
+            color: var(--ink);
+            font: inherit;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .home-actions button:hover {
+            border-color: var(--field-line);
+            box-shadow: var(--shadow);
+        }
+
+        .home-corpus {
+            margin-top: 28px;
+            color: var(--muted);
+            font-size: 14px;
+            text-align: center;
+        }
+
+        /* ---------- results page ---------- */
+
+        .results-page {
+            flex: 1;
+            /* Flex items default to min-width: auto; without this a long
+               no-wrap breadcrumb widens the whole page on phones. */
+            min-width: 0;
+        }
+
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: var(--paper);
+            border-bottom: 1px solid var(--line);
+        }
+
+        .topbar-row {
+            display: flex;
+            align-items: center;
+            gap: 28px;
+            padding: 18px var(--gutter) 0;
+        }
+
+        .topbar .wordmark {
+            font-size: 34px;
+            flex: none;
+            width: var(--mark);
+        }
+
+        .top-search {
+            flex: 1;
+            min-width: 0;
+            max-width: 692px;
+        }
+
+        .topbar .search-field {
+            height: 44px;
+        }
+
+        .theme-toggle {
+            margin-left: auto;
+            flex: none;
+        }
+
+        .controls {
+            display: flex;
+            align-items: flex-end;
+            gap: 24px;
+            /* Tabs carry 12px of inner padding; pull them left so their text sits on the rail. */
+            padding: 0 var(--gutter) 0 calc(var(--rail) - 12px);
+        }
+
+        .tabs {
+            display: flex;
+            gap: 4px;
+        }
+
+        .tab {
+            position: relative;
+            padding: 14px 12px 11px;
+            border: 0;
+            background: none;
+            color: var(--muted);
+            font: inherit;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .tab:hover {
+            color: var(--ink);
+        }
+
+        .tab[aria-selected="true"] {
+            color: var(--ink);
+            font-weight: 600;
+        }
+
+        .tab[aria-selected="true"]::after {
+            content: "";
+            position: absolute;
+            left: 12px;
+            right: 12px;
+            bottom: -1px;
+            height: 3px;
+            border-radius: 3px 3px 0 0;
+            background: var(--accent);
+        }
+
+        .ranking {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: auto;
+            padding-bottom: 10px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .ranking select {
+            border: 0;
+            background: transparent;
+            color: var(--ink);
+            font: inherit;
+            cursor: pointer;
+        }
+
+        .ranking[hidden] {
+            display: none;
+        }
+
+        main.results-main {
+            padding: 0 var(--gutter) 48px var(--rail);
+            max-width: calc(var(--rail) + 652px + var(--gutter));
+        }
+
+        .stats {
+            margin: 14px 0 22px;
+            color: var(--muted);
+            font-size: 13px;
+            min-height: 20px;
+        }
+
+        .notice {
+            margin: 0 0 22px;
+            padding: 12px 14px;
+            border-left: 3px solid var(--accent);
+            background: var(--hover);
+            font-size: 14px;
+        }
+
+        .notice code {
+            font-size: 13px;
+        }
+
+        .results {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .result {
+            margin-bottom: 30px;
+        }
+
+        .crumb {
+            display: block;
+            color: var(--muted);
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .crumb .host {
+            color: var(--ink);
+        }
+
+        .result h3 {
+            margin: 3px 0 4px;
+            font-size: 19px;
+            font-weight: 500;
+            line-height: 1.3;
+            overflow-wrap: anywhere;
+        }
+
+        .result h3 a {
             text-decoration: none;
         }
 
-        a.result-path:hover,
-        a.result-path:focus-visible {
+        .result h3 a:hover {
             text-decoration: underline;
         }
 
-        .result-score {
-            font-size: 0.78rem;
-            color: var(--muted);
-            white-space: nowrap;
-            background: var(--panel-2);
-            border-radius: 999px;
-            padding: 2px 10px;
+        .result h3 a:visited {
+            color: var(--visited);
         }
 
-        .result-snippet {
-            margin-top: 8px;
-            color: var(--text);
-            font-size: 0.92rem;
+        .snippet {
+            margin: 0;
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.58;
+        }
+
+        .snippet b {
+            color: var(--ink);
+            font-weight: 600;
+        }
+
+        .score {
+            color: var(--muted);
+            font-size: 12px;
+            font-variant-numeric: tabular-nums;
+            opacity: 0.8;
+        }
+
+        .empty h2 {
+            margin: 8px 0 10px;
+            font-size: 18px;
+            font-weight: 500;
+        }
+
+        .empty ul {
+            margin: 0;
+            padding-left: 20px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .empty.error h2 {
+            color: var(--error);
+        }
+
+        .pager {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin: 40px 0 8px;
+            flex-wrap: wrap;
+        }
+
+        .pager button {
+            min-width: 36px;
+            height: 36px;
+            padding: 0 10px;
+            border: 0;
+            border-radius: 18px;
+            background: transparent;
+            color: var(--link);
+            font: inherit;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .pager button:hover:not(:disabled) {
+            background: var(--hover);
+        }
+
+        .pager button[aria-current="page"] {
+            color: var(--paper);
+            background: var(--ink);
+            font-weight: 600;
+            cursor: default;
+        }
+
+        .pager button:disabled:not([aria-current]) {
+            color: var(--muted);
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .pager .step {
+            font-weight: 500;
+        }
+
+        .skeleton {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .skeleton li {
+            margin-bottom: 30px;
+        }
+
+        .skeleton span {
+            display: block;
+            height: 12px;
+            margin-bottom: 9px;
+            border-radius: 6px;
+            background: var(--hover);
         }
 
         footer {
-            margin-top: 40px;
-            text-align: center;
+            padding: 16px 24px;
+            border-top: 1px solid var(--line);
+            background: var(--surface);
             color: var(--muted);
-            font-size: 0.8rem;
+            font-size: 13px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: space-between;
         }
 
-        /* Desktop / larger screens */
-        @media (min-width: 620px) {
-            header h1 { font-size: 1.9rem; }
-            .search-row { flex-direction: row; }
-            button.search-btn { width: auto; }
+        footer a {
+            color: inherit;
+        }
+
+        [hidden] {
+            display: none !important;
+        }
+
+        /* ---------- small screens ---------- */
+
+        @media (max-width: 860px) {
+            .topbar-row {
+                flex-wrap: wrap;
+                gap: 12px 16px;
+                padding: 12px 16px 0;
+            }
+
+            .topbar .wordmark {
+                font-size: 28px;
+                width: auto;
+            }
+
+            .top-search {
+                order: 3;
+                max-width: none;
+                flex-basis: 100%;
+            }
+
+            .controls {
+                padding: 0 16px;
+                overflow-x: auto;
+                gap: 12px;
+            }
+
+            main.results-main {
+                padding: 0 16px 40px;
+                max-width: none;
+            }
+
+            .tab {
+                padding: 12px 10px 9px;
+                white-space: nowrap;
+            }
+
+            .ranking {
+                white-space: nowrap;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                transition: none !important;
+            }
         }
     </style>
 </head>
 <body>
-<div class="page">
-    <header>
-        <h1>Search Engine</h1>
-        <p>A from-scratch information-retrieval engine &mdash; TF-IDF, BM25, phrase &amp; boolean search.</p>
-    </header>
 
-    <form id="search-form" autocomplete="off">
-        <div class="search-row">
-            <input type="text" id="query" name="query" placeholder="Search the index&hellip;" aria-label="Search query">
-            <button type="submit" class="search-btn" id="submit-btn">Search</button>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="icon-search" viewBox="0 0 24 24">
+        <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-clear" viewBox="0 0 24 24">
+        <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="icon-theme" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/>
+    </symbol>
+</svg>
+
+<template id="search-form-template">
+    <form class="search-form" role="search">
+        <label class="visually-hidden" for="">Search</label>
+        <div class="search-field">
+            <input type="search" name="q" autocomplete="off" spellcheck="false" enterkeyhint="search">
+            <button class="icon-button clear-button" type="button" aria-label="Clear search" hidden>
+                <svg><use href="#icon-clear"/></svg>
+            </button>
+            <span class="divider" aria-hidden="true"></span>
+            <button class="icon-button submit-button" type="submit" aria-label="Search">
+                <svg><use href="#icon-search"/></svg>
+            </button>
         </div>
+    </form>
+</template>
 
-        <div class="options">
-            <div class="field">
-                <label for="mode">Mode</label>
-                <select id="mode">
-                    <option value="search">Ranked</option>
-                    <option value="phrase">Phrase</option>
-                    <option value="bool">Boolean</option>
-                </select>
+<!-- Home -->
+<div class="home" id="home">
+    <a class="wordmark" href="/" aria-label="sift home">s<span class="i">ı</span>ft</a>
+    <div class="home-search" id="home-search"></div>
+    <div class="home-actions">
+        <button type="button" id="home-submit">Search</button>
+        <button type="button" id="home-lucky">Try a random topic</button>
+    </div>
+    <p class="home-corpus" id="home-corpus"></p>
+</div>
+
+<!-- Results -->
+<div class="results-page" id="results-page" hidden>
+    <header class="topbar">
+        <div class="topbar-row">
+            <a class="wordmark" href="/" aria-label="sift home">s<span class="i">ı</span>ft</a>
+            <div class="top-search" id="top-search"></div>
+            <button class="icon-button theme-toggle" type="button" id="theme-toggle" aria-label="Switch light or dark theme">
+                <svg><use href="#icon-theme"/></svg>
+            </button>
+        </div>
+        <div class="controls">
+            <div class="tabs" role="tablist" aria-label="Search type">
+                <button class="tab" role="tab" data-mode="search">All</button>
+                <button class="tab" role="tab" data-mode="phrase">Exact phrase</button>
+                <button class="tab" role="tab" data-mode="bool">Boolean</button>
             </div>
-
-            <div class="field" id="ranker-field">
-                <label for="ranker">Ranker</label>
+            <label class="ranking" id="ranking">
+                Ranked by
                 <select id="ranker">
                     <option value="bm25">BM25</option>
                     <option value="tfidf">TF-IDF</option>
                     <option value="cosine">Cosine</option>
                 </select>
-            </div>
-
-            <div class="field">
-                <label for="limit">Results</label>
-                <select id="limit">
-                    <option value="10">10</option>
-                    <option value="25">25</option>
-                    <option value="50">50</option>
-                </select>
-            </div>
+            </label>
         </div>
+    </header>
 
-        <div class="hint" id="hint"></div>
-    </form>
-
-    <div class="status" id="status" role="status" aria-live="polite"></div>
-
-    <ul class="results" id="results"></ul>
-
-    <footer>Powered by the SearchEngine REST API</footer>
+    <main class="results-main">
+        <p class="stats" id="stats" role="status" aria-live="polite"></p>
+        <p class="notice" id="notice" hidden></p>
+        <ol class="results" id="results"></ol>
+        <nav class="pager" id="pager" aria-label="Pages"></nav>
+    </main>
 </div>
 
+<footer>
+    <span id="footer-corpus">Searching the local index</span>
+    <span>Built from scratch: inverted index, BM25, MaxScore</span>
+</footer>
+
 <script>
-    const form = document.getElementById("search-form");
-    const queryInput = document.getElementById("query");
-    const modeSelect = document.getElementById("mode");
-    const rankerField = document.getElementById("ranker-field");
-    const rankerSelect = document.getElementById("ranker");
-    const limitSelect = document.getElementById("limit");
-    const hint = document.getElementById("hint");
-    const statusEl = document.getElementById("status");
-    const resultsEl = document.getElementById("results");
-    const submitBtn = document.getElementById("submit-btn");
+(function () {
+    "use strict";
 
-    const HINTS = {
-        search: "Ranked keyword search. Results ordered by relevance score.",
-        phrase: "Phrase search: matches documents where the words appear adjacent, in order.",
-        bool: "Boolean search: combine terms with AND, OR, NOT and ( ). e.g. search AND NOT engine"
-    };
+    const PAGE_SIZE = 10;
+    const MAX_RESULTS = 500;
+    // Words the index ignores (the engine's stopword list), so they are never emboldened.
+    const IGNORED_WORDS = new Set(["a", "an", "the", "is", "are", "was", "were", "in", "on", "at", "to",
+        "for", "of", "and", "or", "not", "this", "that", "these", "those", "be", "been", "being"]);
 
-    function syncMode() {
-        const mode = modeSelect.value;
-        rankerField.style.display = mode === "search" ? "" : "none";
-        hint.textContent = HINTS[mode] || "";
-        queryInput.placeholder = mode === "bool"
-            ? "e.g. ranking AND (bm25 OR tfidf)"
-            : "Search the index…";
+    const state = { q: "", mode: "search", ranker: "bm25", page: 1 };
+    let requestId = 0;
+
+    // ---------- theme ----------
+
+    function readTheme() {
+        try { return localStorage.getItem("sift-theme"); } catch (e) { return null; }
     }
 
-    modeSelect.addEventListener("change", syncMode);
-    syncMode();
+    function applyTheme(theme) {
+        if (theme === "light" || theme === "dark") {
+            document.documentElement.dataset.theme = theme;
+        } else {
+            delete document.documentElement.dataset.theme;
+        }
+    }
 
-    function buildUrl() {
-        const mode = modeSelect.value;
-        const q = queryInput.value.trim();
-        const params = new URLSearchParams({ q });
-        if (mode === "search") {
-            params.set("ranker", rankerSelect.value);
+    applyTheme(readTheme());
+
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const current = document.documentElement.dataset.theme
+            || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        const next = current === "dark" ? "light" : "dark";
+        applyTheme(next);
+        try { localStorage.setItem("sift-theme", next); } catch (e) { /* storage unavailable */ }
+    });
+
+    // ---------- search boxes ----------
+
+    function mountSearch(container, id) {
+        const node = document.getElementById("search-form-template").content.firstElementChild.cloneNode(true);
+        const input = node.querySelector("input");
+        const clear = node.querySelector(".clear-button");
+        input.id = id;
+        node.querySelector("label").htmlFor = id;
+        input.addEventListener("input", () => { clear.hidden = input.value === ""; });
+        clear.addEventListener("click", () => {
+            input.value = "";
+            clear.hidden = true;
+            input.focus();
+        });
+        node.addEventListener("submit", event => {
+            event.preventDefault();
+            const q = input.value.trim();
+            if (q) navigate({ q: q, page: 1 });
+            else input.focus();
+        });
+        container.appendChild(node);
+        return {
+            input: input,
+            set(value) { input.value = value; clear.hidden = value === ""; }
+        };
+    }
+
+    const homeSearch = mountSearch(document.getElementById("home-search"), "home-q");
+    const topSearch = mountSearch(document.getElementById("top-search"), "top-q");
+    homeSearch.input.setAttribute("aria-label", "Search");
+    topSearch.input.setAttribute("aria-label", "Search");
+
+    document.getElementById("home-submit").addEventListener("click", () => {
+        homeSearch.input.form.requestSubmit();
+    });
+
+    // Searches one of a few broad topics, for a first look at the index.
+    document.getElementById("home-lucky").addEventListener("click", () => {
+        const words = ["history", "city", "music", "science", "river", "war", "art", "language", "animal", "film"];
+        navigate({ q: words[Math.floor(Math.random() * words.length)], page: 1 });
+    });
+
+    // "/" focuses the search box, as on most search sites.
+    document.addEventListener("keydown", event => {
+        if (event.key !== "/" || event.target.matches("input, select, textarea")) return;
+        event.preventDefault();
+        (state.q ? topSearch : homeSearch).input.focus();
+    });
+
+    // ---------- tabs and ranking ----------
+
+    const tabs = Array.from(document.querySelectorAll(".tab"));
+    const rankerSelect = document.getElementById("ranker");
+
+    tabs.forEach(tab => tab.addEventListener("click", () => navigate({ mode: tab.dataset.mode, page: 1 })));
+    rankerSelect.addEventListener("change", () => navigate({ ranker: rankerSelect.value, page: 1 }));
+
+    // ---------- URL state ----------
+
+    function readUrl() {
+        const params = new URLSearchParams(location.search);
+        state.q = (params.get("q") || "").trim();
+        state.mode = ["search", "phrase", "bool"].includes(params.get("mode")) ? params.get("mode") : "search";
+        state.ranker = ["bm25", "tfidf", "cosine"].includes(params.get("ranker")) ? params.get("ranker") : "bm25";
+        state.page = Math.max(1, parseInt(params.get("page"), 10) || 1);
+    }
+
+    function writeUrl(replace) {
+        const params = new URLSearchParams();
+        if (state.q) params.set("q", state.q);
+        if (state.q && state.mode !== "search") params.set("mode", state.mode);
+        if (state.q && state.ranker !== "bm25") params.set("ranker", state.ranker);
+        if (state.q && state.page > 1) params.set("page", state.page);
+        const url = params.toString() ? "/?" + params : "/";
+        history[replace ? "replaceState" : "pushState"](null, "", url);
+    }
+
+    function navigate(change) {
+        Object.assign(state, change);
+        writeUrl(false);
+        render();
+        if (change.page) window.scrollTo(0, 0);
+    }
+
+    window.addEventListener("popstate", () => { readUrl(); render(); });
+
+    // ---------- rendering ----------
+
+    const home = document.getElementById("home");
+    const resultsPage = document.getElementById("results-page");
+    const stats = document.getElementById("stats");
+    const notice = document.getElementById("notice");
+    const list = document.getElementById("results");
+    const pager = document.getElementById("pager");
+
+    function render() {
+        const searching = state.q !== "";
+        home.hidden = searching;
+        resultsPage.hidden = !searching;
+        document.title = searching ? state.q + " - sift" : "sift";
+
+        if (!searching) {
+            homeSearch.set("");
+            homeSearch.input.focus();
+            return;
         }
-        if (mode !== "bool") {
-            params.set("limit", limitSelect.value);
+
+        topSearch.set(state.q);
+        tabs.forEach(tab => tab.setAttribute("aria-selected", String(tab.dataset.mode === state.mode)));
+        document.getElementById("ranking").hidden = state.mode !== "search";
+        rankerSelect.value = state.ranker;
+        runSearch();
+    }
+
+    async function runSearch() {
+        const id = ++requestId;
+        const offset = Math.min((state.page - 1) * PAGE_SIZE, MAX_RESULTS - PAGE_SIZE);
+        const params = new URLSearchParams({ q: state.q, limit: PAGE_SIZE, offset: offset });
+        if (state.mode === "search") params.set("ranker", state.ranker);
+
+        stats.textContent = "";
+        notice.hidden = true;
+        pager.innerHTML = "";
+        showSkeleton();
+
+        let data;
+        try {
+            const response = await fetch("/" + state.mode + "?" + params);
+            data = await response.json();
+            if (!response.ok) throw new Error(data.error || "the server returned " + response.status);
+        } catch (error) {
+            if (id === requestId) showError(error.message);
+            return;
         }
-        return "/" + mode + "?" + params.toString();
+
+        if (id !== requestId) return;
+        showResults(data, offset);
+    }
+
+    function showSkeleton() {
+        list.className = "skeleton";
+        list.innerHTML = Array.from({ length: 4 }, () =>
+            '<li><span style="width:38%"></span><span style="width:62%;height:18px"></span>' +
+            '<span style="width:96%"></span><span style="width:78%"></span></li>').join("");
+    }
+
+    function showResults(data, offset) {
+        const results = data.results || [];
+        list.className = "results";
+        list.innerHTML = "";
+
+        const took = typeof data.tookMs === "number" ? formatMillis(data.tookMs) : "";
+        if (results.length === 0) {
+            stats.textContent = took ? "No results (" + took + ")" : "";
+            showEmpty();
+            return;
+        }
+
+        const first = offset + 1;
+        const last = offset + results.length;
+        if (typeof data.total === "number") {
+            const pagePrefix = state.page > 1 ? "Page " + state.page + " of " : "";
+            stats.textContent = pagePrefix + plural(data.total, "result") + " (" + took + ")";
+        } else {
+            stats.textContent = "Results " + first + "-" + last + ", best first (" + took + ")";
+        }
+
+        if (state.mode === "bool") {
+            notice.hidden = false;
+            notice.innerHTML = "Boolean results match exactly and are listed in index order, not by relevance.";
+        }
+
+        const terms = highlightTerms(state.q);
+        for (const result of results) list.appendChild(resultItem(result, terms));
+        renderPager(data, results.length);
+    }
+
+    function resultItem(result, terms) {
+        const li = document.createElement("li");
+        li.className = "result";
+
+        const path = result.path || "";
+        const isUrl = /^https?:\/\//i.test(path);
+        const title = result.title || fileName(path) || "Document " + result.docId;
+
+        const crumb = document.createElement("span");
+        crumb.className = "crumb";
+        crumb.innerHTML = breadcrumb(path, isUrl);
+
+        const heading = document.createElement("h3");
+        if (isUrl) {
+            const link = document.createElement("a");
+            link.href = path;
+            link.rel = "noopener";
+            link.textContent = title;
+            heading.appendChild(link);
+        } else {
+            heading.textContent = title;
+        }
+
+        const snippet = document.createElement("p");
+        snippet.className = "snippet";
+        snippet.innerHTML = highlight(result.snippet || "", terms);
+
+        if (state.mode === "search") {
+            const score = document.createElement("span");
+            score.className = "score";
+            score.textContent = "  " + Number(result.score).toFixed(2);
+            score.title = state.ranker.toUpperCase() + " score";
+            snippet.appendChild(score);
+        }
+
+        li.append(crumb, heading, snippet);
+        return li;
+    }
+
+    function showEmpty() {
+        const tips = state.mode === "phrase"
+            ? ["Check the spelling, or drop a word from the phrase.", "Switch to All to match the words in any order."]
+            : state.mode === "bool"
+                ? ["Combine words with AND, OR and NOT, e.g. <code>jazz AND NOT rock</code>.",
+                   "A word joined with AND must appear in every result."]
+                : ["Check the spelling.", "Try fewer or more general words."];
+        list.className = "results";
+        list.innerHTML = '<li class="empty"><h2>No documents match <b>' + escapeHtml(state.q) + "</b></h2><ul>" +
+            tips.map(tip => "<li>" + tip + "</li>").join("") + "</ul></li>";
+    }
+
+    function showError(message) {
+        list.className = "results";
+        const hint = state.mode === "bool"
+            ? "<li>Boolean searches need complete expressions, e.g. <code>(paris OR london) AND museum</code>.</li>"
+            : "<li>Check that the search server is running, then search again.</li>";
+        list.innerHTML = '<li class="empty error"><h2>This search did not run: ' + escapeHtml(message) +
+            "</h2><ul>" + hint + "</ul></li>";
+    }
+
+    function renderPager(data, count) {
+        const known = typeof data.total === "number";
+        const reachable = known ? Math.min(data.total, MAX_RESULTS) : MAX_RESULTS;
+        const lastPage = known
+            ? Math.max(1, Math.ceil(reachable / PAGE_SIZE))
+            : (count < PAGE_SIZE ? state.page : Math.min(state.page + 1, MAX_RESULTS / PAGE_SIZE));
+        if (lastPage <= 1 && state.page === 1) return;
+
+        const pages = [];
+        const start = Math.max(1, Math.min(state.page - 4, lastPage - 9));
+        for (let p = start; p <= Math.min(lastPage, start + 9); p++) pages.push(p);
+
+        pager.appendChild(pageButton("Previous", state.page - 1, state.page === 1, "step"));
+        for (const p of pages) pager.appendChild(pageButton(String(p), p, false, "", p === state.page));
+        pager.appendChild(pageButton("Next", state.page + 1, state.page >= lastPage, "step"));
+    }
+
+    function pageButton(label, page, disabled, className, current) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        if (className) button.className = className;
+        if (current) {
+            button.setAttribute("aria-current", "page");
+            button.disabled = true;
+        } else if (disabled) {
+            button.disabled = true;
+        } else {
+            button.setAttribute("aria-label", label === String(page) ? "Page " + page : label + " page");
+            button.addEventListener("click", () => navigate({ page: page }));
+        }
+        return button;
+    }
+
+    // ---------- formatting helpers ----------
+
+    function breadcrumb(path, isUrl) {
+        if (!isUrl) return escapeHtml(path);
+        try {
+            const url = new URL(path);
+            const parts = url.pathname.split("/").filter(Boolean).map(part => {
+                try { return decodeURIComponent(part); } catch (e) { return part; }
+            });
+            return '<span class="host">' + escapeHtml(url.host) + "</span>" +
+                parts.map(part => " &rsaquo; " + escapeHtml(part)).join("");
+        } catch (e) {
+            return escapeHtml(path);
+        }
+    }
+
+    function fileName(path) {
+        const parts = path.split(/[\\/]/);
+        return parts[parts.length - 1];
+    }
+
+    // Query words to embolden; prefix matching roughly mirrors stemming
+    // ("rank" also marks "ranking").
+    function highlightTerms(query) {
+        const words = query.toLowerCase().split(/[^a-z0-9]+/)
+            .filter(word => word.length >= 2 && !IGNORED_WORDS.has(word));
+        return Array.from(new Set(words)).map(word => word.length > 4 ? word.slice(0, word.length - 1) : word);
+    }
+
+    function highlight(text, terms) {
+        if (!terms.length) return escapeHtml(text);
+        const pattern = new RegExp("\\b(" + terms.map(escapeRegex).join("|") + ")[a-z0-9]*", "gi");
+        let html = "";
+        let last = 0;
+        for (const match of text.matchAll(pattern)) {
+            html += escapeHtml(text.slice(last, match.index)) + "<b>" + escapeHtml(match[0]) + "</b>";
+            last = match.index + match[0].length;
+        }
+        return html + escapeHtml(text.slice(last));
+    }
+
+    function formatMillis(ms) {
+        return ms < 1 ? ms.toFixed(2) + " ms" : ms < 100 ? ms.toFixed(1) + " ms" : Math.round(ms) + " ms";
+    }
+
+    function plural(count, word) {
+        return count.toLocaleString() + " " + word + (count === 1 ? "" : "s");
     }
 
     function escapeHtml(value) {
-        const div = document.createElement("div");
-        div.textContent = value == null ? "" : String(value);
-        return div.innerHTML;
+        return String(value).replace(/[&<>"']/g, c => ({
+            "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+        })[c]);
     }
 
-    function render(data) {
-        resultsEl.innerHTML = "";
-        const results = data.results || [];
-        if (results.length === 0) {
-            statusEl.textContent = "No matching documents.";
-            return;
-        }
-        const total = typeof data.total === "number"
-            ? " of " + data.total.toLocaleString()
-            : "";
-        const took = typeof data.tookMs === "number" ? " · " + data.tookMs.toFixed(1) + " ms" : "";
-        statusEl.textContent = results.length + total + " result" + (results.length === 1 && !total ? "" : "s")
-            + " · " + (data.mode || "") + took;
-        for (const r of results) {
-            const li = document.createElement("li");
-            li.className = "result";
-            const isUrl = /^https?:\/\//.test(r.path || "");
-            const label = escapeHtml(r.title || r.path || ("doc " + r.docId));
-            const heading = isUrl
-                ? '<a class="result-path" href="' + escapeHtml(r.path) + '" target="_blank" rel="noopener">' + label + "</a>"
-                : '<span class="result-path">' + label + "</span>";
-            li.innerHTML =
-                '<div class="result-head">' +
-                heading +
-                '<span class="result-score">score ' + (Number(r.score).toFixed(4)) + "</span>" +
-                "</div>" +
-                (r.snippet ? '<div class="result-snippet">' + escapeHtml(r.snippet) + "</div>" : "");
-            resultsEl.appendChild(li);
-        }
+    function escapeRegex(value) {
+        return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
 
-    async function runSearch(event) {
-        if (event) event.preventDefault();
-        const q = queryInput.value.trim();
-        if (!q) {
-            queryInput.focus();
-            return;
-        }
-        statusEl.classList.remove("error");
-        statusEl.textContent = "Searching…";
-        resultsEl.innerHTML = "";
-        submitBtn.disabled = true;
-        try {
-            const response = await fetch(buildUrl());
-            const data = await response.json();
-            if (!response.ok) {
-                throw new Error(data.error || ("HTTP " + response.status));
-            }
-            render(data);
-        } catch (err) {
-            statusEl.classList.add("error");
-            statusEl.textContent = "Error: " + err.message;
-        } finally {
-            submitBtn.disabled = false;
-        }
-    }
+    // ---------- corpus size ----------
 
-    form.addEventListener("submit", runSearch);
+    fetch("/health").then(r => r.json()).then(health => {
+        const text = "Search " + plural(health.documents, "document");
+        document.getElementById("home-corpus").textContent = text;
+        document.getElementById("footer-corpus").textContent = text + " in the local index";
+    }).catch(() => { /* corpus size is optional */ });
+
+    readUrl();
+    writeUrl(true);
+    render();
+})();
 </script>
 </body>
 </html>

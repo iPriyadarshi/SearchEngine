@@ -86,7 +86,7 @@ public class SearchHttpServerTest {
 
         assertTrue(response.headers().firstValue("Content-Type").orElse("").contains("text/html"));
 
-        assertTrue(response.body().contains("<title>Search Engine</title>"));
+        assertTrue(response.body().contains("<title>sift</title>"));
 
         // the UI must reference the API endpoints it calls
         assertTrue(response.body().contains("/search") || response.body().contains("buildUrl"));

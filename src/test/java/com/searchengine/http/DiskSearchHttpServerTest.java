@@ -122,4 +122,25 @@ public class DiskSearchHttpServerTest {
 
         assertTrue(get("/health").body().contains("\"documents\":3"));
     }
+
+    @Test
+    void offsetPagesThroughResults() throws Exception {
+
+        String all = get("/search?q=documents&limit=10").body();
+
+        String second = get("/search?q=documents&limit=1&offset=1").body();
+
+        assertTrue(all.contains("\"count\":2"), all);
+
+        assertTrue(second.contains("\"count\":1") && second.contains("\"offset\":1"), second);
+
+        // The second page holds the second hit of the full list.
+        int secondDoc = all.indexOf("\"docId\":", all.indexOf("\"docId\":") + 1);
+
+        String expected = all.substring(secondDoc, all.indexOf(',', secondDoc));
+
+        assertTrue(second.contains(expected), expected + " in " + second);
+
+        assertTrue(get("/search?q=documents&offset=999").body().contains("\"offset\":490"));
+    }
 }
