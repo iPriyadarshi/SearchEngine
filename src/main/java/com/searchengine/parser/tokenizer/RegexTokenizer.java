@@ -4,15 +4,17 @@ import com.searchengine.api.Tokenizer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 public class RegexTokenizer implements Tokenizer {
 
-    private static final String SPLIT_REGEX = "[^a-zA-Z0-9]+";
+    // Compiled once: String.split would recompile the pattern on every call.
+    private static final Pattern SPLIT = Pattern.compile("[^a-zA-Z0-9]+");
 
     @Override
     public List<String> tokenize(String text) {
 
-        String[] rawTokens = text.split(SPLIT_REGEX);
+        String[] rawTokens = SPLIT.split(text);
 
         List<String> tokens = new ArrayList<>();
 

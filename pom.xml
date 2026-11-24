@@ -28,6 +28,18 @@
 
         </dependency>
 
+        <!-- bzip2 decompression for Wikipedia dumps -->
+
+        <dependency>
+
+            <groupId>org.apache.commons</groupId>
+
+            <artifactId>commons-compress</artifactId>
+
+            <version>1.27.1</version>
+
+        </dependency>
+
         <!-- logging -->
 
         <dependency>
