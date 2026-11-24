@@ -12,6 +12,10 @@ This project implements:
 - a disk-based, memory-mapped index that scales to Wikipedia-sized corpora
 - MaxScore top-k retrieval, so queries stay sub-millisecond on hundreds of thousands of articles
 - a streaming Wikipedia dump reader with parallel bzip2 decompression
+- general web search: a polite crawler, Common Crawl ingestion, HTML extraction,
+  title / URL / anchor-text fields, PageRank, site popularity and two-stage ranking
+- spelling correction ("Did you mean", auto-correct) and autocomplete
+- an evaluation harness with judged queries and held-out weight tuning
 - HTML parsing and a small web crawler
 - an interactive CLI, a REST/HTTP search API, and a responsive web UI
 - extensible architecture using SOLID principles
@@ -112,10 +116,15 @@ com.searchengine
 ├── engine/         SearchEngine facade + result formatting
 ├── search/         SearchBackend: one interface over the memory and disk engines
 ├── storage/        disk persistence (IndexStore)
-├── crawler/        web crawler + pluggable page fetcher
+├── crawler/        simple breadth-first crawler (in-memory engine)
+├── web/            web pages: HTML extraction, URL normalization, filters, robots.txt,
+│                   polite crawler, Common Crawl WARC reader, local page corpus
 ├── http/           REST search API + responsive web UI over the JDK HttpServer
 ├── Main               command line entry point
 ├── BuildIndexCommand  --build-index
+├── CrawlCommand       --crawl-web
+├── FetchCommand       --fetch-cc
+├── EvalCommand        --eval
 └── BenchmarkCommand   --bench
 
 resources/web/      single-page web UI (HTML + CSS + JS)
@@ -371,6 +380,103 @@ index and temporary segments.
 
 ---
 
+# Web Search
+
+The engine is meant for searching the public web, not just one site. Getting
+pages (slow, network-bound) is kept separate from indexing (fast, repeatable):
+
+```
+Tranco top sites ─▶ --crawl-web (polite crawler) ──┐
+                                                  ├─▶ corpus (*.docs.gz) ─▶ --build-index ─▶ index ─▶ --serve
+Common Crawl WARCs ─▶ --fetch-cc (download+extract)┘        ▲
+Wikipedia dumps ────────────────────────────────────────────┘
+```
+
+## Getting pages
+
+* **Our crawler** (`--crawl-web`) visits popular sites from the
+  [Tranco](https://tranco-list.eu/) top-1M list, home page first, then
+  breadth-first within the site. It obeys `robots.txt` (RFC 9309, including
+  `Crawl-delay`), makes one request at a time per site at least 1 s apart,
+  identifies itself as `siftbot/1.0 (+https://github.com/iPriyadarshi/SearchEngine)`,
+  and takes a bounded number of pages per site. This covers the "head" of the
+  web: the sites people navigate to by name.
+* **Common Crawl** (`--fetch-cc`) supplies the long tail without our machine
+  touching millions of sites. Each 1 GB WARC is downloaded with resume
+  (HTTP Range requests survive dropped connections), filtered down to English
+  pages with real text, and stored as roughly 1% of its size.
+* Every page goes through the same extraction: title (with og:title / h1
+  fallbacks), meta description, same-host canonical URL, language, links with
+  anchor text, and main text with navigation, headers, footers and other site
+  chrome removed. `noindex` pages and `nofollow` links are respected; non-English
+  pages, near-empty pages and obvious adult sites are dropped; duplicate URLs
+  and duplicate texts are indexed once.
+
+## Ranking
+
+Each page is indexed with four fields: body (including the meta description),
+**title**, **URL words** (`docs.python.org/3/tutorial` → docs, python, 3,
+tutorial) and **anchor text**, the words other pages use when linking to it.
+Links between indexed pages also give each page a **PageRank**, and the Tranco
+list gives each site a **popularity rank**.
+
+A query is answered in two stages:
+
+1. **Retrieve:** BM25 over the body plus weighted title, URL and anchor clauses
+   (and the words run together as a URL word, so `stack overflow` matches
+   `stackoverflow.com`). MaxScore returns the best 100 candidates.
+2. **Re-rank:** add PageRank, site popularity, how much of the query the
+   title covers, an exact title match, being the home page of a site the query
+   names, and a small penalty for deep URLs.
+
+Quoted queries are exact phrases; capitalised `AND`, `OR`, `NOT` make a boolean
+query (matches ranked by BM25).
+
+## Query help
+
+* **Spelling:** unknown or rare words are checked against a vocabulary of words
+  seen on at least 3 pages, using candidates one or two edits away. If a word is
+  unknown to the index the corrected query is shown ("Showing results for …,
+  Search instead for …"); otherwise it is offered ("Did you mean …").
+* **Autocomplete:** completions come from page titles, ranked by the popularity
+  of the pages that carry them; boilerplate titles ("Home", "Contact us") are
+  excluded.
+
+## Measuring quality
+
+`eval/web-queries.tsv` holds judged queries (60 navigational, 42
+informational), each with the URL prefixes that count as a correct answer.
+`--eval` reports MRR@10, Success@1 and Success@10, lists queries whose answers
+are not in the index (coverage gaps, which ranking cannot fix), and with
+`--tune` searches the ranking weights on half the queries and reports the other
+half, so improvements are not just overfitting.
+
+On an index of 217k Wikipedia articles, the web ranker raised MRR@10 from 0.49
+(body BM25) to 0.79, and held-out tuning to 0.89.
+
+## Building a web index
+
+```
+# 1. Popular sites, politely (resumable; ~2.5 pages/site on average)
+java -jar target/searchengine.jar --crawl-web --seeds data/tranco/top-1m.csv \
+     --corpus data/corpus/crawl --top 30000 --sites-parallel 96 --pages-per-site 15
+
+# 2. Long tail from Common Crawl (resumable; ~6,500 English pages per WARC)
+java -jar target/searchengine.jar --fetch-cc --cc CC-MAIN-2026-47 --cc-files 160 \
+     --corpus data/corpus/cc-2026-47 --parallel-files 3
+
+# 3. Index everything together (minutes; rerun whenever ranking changes)
+java -Xmx6g -jar target/searchengine.jar --build-index --out indexes/web \
+     --corpus data/corpus/crawl --corpus data/corpus/cc-2026-47 \
+     --wiki data/wiki/enwiki --domain-ranks data/tranco/top-1m.csv
+
+# 4. Measure, then serve
+java -jar target/searchengine.jar --eval --index indexes/web --verbose
+java -jar target/searchengine.jar --index indexes/web --serve 8080
+```
+
+---
+
 # Installation
 
 ## Requirements
@@ -526,6 +632,7 @@ GET /               responsive web UI
 GET /search?q=<query>&ranker=tfidf|cosine|bm25&limit=N    (limit <= 100)
 GET /phrase?q=<phrase>&limit=N
 GET /bool?q=<expr with AND / OR / NOT>&limit=N
+GET /suggest?q=<prefix>                                    autocomplete
 GET /health
 ```
 
@@ -540,7 +647,10 @@ curl "http://localhost:8080/search?q=ranking%20documents&ranker=bm25"
 ```
 
 `total` is omitted when MaxScore skipped non-competitive documents and so did
-not count every match. Invalid input returns `400`; unexpected failures return
+not count every match. `offset=M` pages through results (the first 500 of a
+query). Responses may carry `suggestion` (a spelling correction) and
+`correctedFrom` (results are for `suggestion` because the original query was
+misspelled); `exact=1` turns correction off. Invalid input returns `400`; unexpected failures return
 a JSON `500`.
 
 ---
@@ -622,8 +732,24 @@ Wikipedia scale ✔
 
 ---
 
+## STEP 9
+general web search ✔
+
+- polite crawler (robots.txt, per-site delays) seeded from Tranco ✔
+- Common Crawl ingestion with resumable downloads ✔
+- HTML extraction, English / quality / adult filters, de-duplication ✔
+- title, URL and anchor-text fields; PageRank; site popularity ✔
+- two-stage ranking with tunable weights ✔
+- spelling correction and autocomplete ✔
+- judged query set and evaluation harness ✔
+
+---
+
 # Possible Next Steps
 
+* Semantic (embedding) retrieval combined with BM25, for queries that share no words with the answer
+* Incremental index segments, so fresh crawls are searchable without a full rebuild
+* A larger judged query set, and learning-to-rank once more signals exist
 * Block-Max WAND, using the per-block max tf / min doc length already stored
 * SIMD-friendly block encodings (e.g. PForDelta) instead of varints
 * Field weighting (title matches above body matches)
