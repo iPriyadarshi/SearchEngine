@@ -252,13 +252,6 @@
             box-shadow: var(--shadow);
         }
 
-        .home-corpus {
-            margin-top: 28px;
-            color: var(--muted);
-            font-size: 14px;
-            text-align: center;
-        }
-
         /* ---------- results page ---------- */
 
         .results-page {
@@ -449,13 +442,6 @@
             font-weight: 600;
         }
 
-        .score {
-            color: var(--muted);
-            font-size: 12px;
-            font-variant-numeric: tabular-nums;
-            opacity: 0.8;
-        }
-
         .empty h2 {
             margin: 8px 0 10px;
             font-size: 18px;
@@ -531,22 +517,6 @@
             margin-bottom: 9px;
             border-radius: 6px;
             background: var(--hover);
-        }
-
-        footer {
-            padding: 16px 24px;
-            border-top: 1px solid var(--line);
-            background: var(--surface);
-            color: var(--muted);
-            font-size: 13px;
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-            justify-content: space-between;
-        }
-
-        footer a {
-            color: inherit;
         }
 
         [hidden] {
@@ -641,7 +611,6 @@
         <button type="button" id="home-submit">Search</button>
         <button type="button" id="home-lucky">Try a random topic</button>
     </div>
-    <p class="home-corpus" id="home-corpus"></p>
 </div>
 
 <!-- Results -->
@@ -678,11 +647,6 @@
         <nav class="pager" id="pager" aria-label="Pages"></nav>
     </main>
 </div>
-
-<footer>
-    <span id="footer-corpus">Searching the local index</span>
-    <span>Built from scratch: inverted index, BM25, MaxScore</span>
-</footer>
 
 <script>
 (function () {
@@ -925,14 +889,6 @@
         snippet.className = "snippet";
         snippet.innerHTML = highlight(result.snippet || "", terms);
 
-        if (state.mode === "search") {
-            const score = document.createElement("span");
-            score.className = "score";
-            score.textContent = "  " + Number(result.score).toFixed(2);
-            score.title = state.ranker.toUpperCase() + " score";
-            snippet.appendChild(score);
-        }
-
         li.append(crumb, heading, snippet);
         return li;
     }
@@ -1050,14 +1006,6 @@
     function escapeRegex(value) {
         return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
-
-    // ---------- corpus size ----------
-
-    fetch("/health").then(r => r.json()).then(health => {
-        const text = "Search " + plural(health.documents, "document");
-        document.getElementById("home-corpus").textContent = text;
-        document.getElementById("footer-corpus").textContent = text + " in the local index";
-    }).catch(() => { /* corpus size is optional */ });
 
     readUrl();
     writeUrl(true);
