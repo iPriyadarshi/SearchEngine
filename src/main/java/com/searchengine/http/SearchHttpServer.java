@@ -34,6 +34,7 @@ import java.util.concurrent.Executors;
  * GET /search?q=...&amp;ranker=bm25|tfidf|cosine&amp;limit=N&amp;offset=M   ranked search
  * GET /phrase?q=...&amp;limit=N&amp;offset=M                            phrase search
  * GET /bool?q=... AND ...&amp;limit=N&amp;offset=M                      boolean search
+ * GET /suggest?q=...                                    autocomplete (JSON array)
  * GET /health                                            liveness probe
  * </pre>
  *
@@ -69,6 +70,8 @@ public class SearchHttpServer {
         server.createContext("/bool", guarded(this::handleBool));
 
         server.createContext("/health", guarded(this::handleHealth));
+
+        server.createContext("/suggest", guarded(this::handleSuggest));
 
         // Fallback context: serves the web UI at "/" and 404s everything else.
         server.createContext("/", guarded(this::handleRoot));
@@ -148,6 +151,23 @@ public class SearchHttpServer {
     private void handleHealth(HttpExchange exchange) throws IOException {
 
         respond(exchange, 200, "{\"status\":\"ok\",\"documents\":" + backend.documentCount() + "}");
+    }
+
+    private void handleSuggest(HttpExchange exchange) throws IOException {
+
+        String q = queryParams(exchange).getOrDefault("q", "");
+
+        StringBuilder sb = new StringBuilder("{\"query\":\"").append(Json.escape(q)).append("\",\"suggestions\":[");
+
+        // Bound the work a single keystroke can cause.
+        List<String> completions = q.length() > 100 ? List.of() : backend.complete(q);
+
+        for (int i = 0; i < completions.size(); i++) {
+
+            sb.append(i > 0 ? "," : "").append('"').append(Json.escape(completions.get(i))).append('"');
+        }
+
+        respond(exchange, 200, sb.append("]}").toString());
     }
 
     private void handleRoot(HttpExchange exchange) throws IOException {
@@ -231,7 +251,7 @@ public class SearchHttpServer {
             List<Hit> hits = all.hits();
 
             return new Hits(all.mode(), hits.subList(Math.min(offset, hits.size()), hits.size()),
-                    all.total(), all.tookMillis());
+                    all.total(), all.tookMillis(), all.suggestion(), all.correctedFrom());
         }
     }
 
@@ -274,6 +294,16 @@ public class SearchHttpServer {
         }
 
         sb.append("\"tookMs\":").append(String.format(Locale.ROOT, "%.2f", result.tookMillis())).append(",");
+
+        if (result.suggestion() != null) {
+
+            sb.append("\"suggestion\":\"").append(Json.escape(result.suggestion())).append("\",");
+        }
+
+        if (result.correctedFrom() != null) {
+
+            sb.append("\"correctedFrom\":\"").append(Json.escape(result.correctedFrom())).append("\",");
+        }
 
         sb.append("\"results\":[");
 

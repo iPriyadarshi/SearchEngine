@@ -139,6 +139,72 @@
             width: 100%;
         }
 
+        /* Autocomplete: the field and list read as one surface while open. */
+        .search-form.open .search-field {
+            border-radius: 24px 24px 0 0;
+            box-shadow: var(--shadow);
+            border-color: transparent;
+        }
+
+        .suggestions {
+            position: absolute;
+            z-index: 20;
+            left: 0;
+            right: 0;
+            top: 100%;
+            margin: 0;
+            padding: 6px 0 10px;
+            list-style: none;
+            background: var(--field);
+            border-radius: 0 0 24px 24px;
+            box-shadow: var(--shadow);
+            border-top: 1px solid var(--line);
+        }
+
+        .suggestions li {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 7px 18px;
+            cursor: pointer;
+            font-size: 15px;
+        }
+
+        .suggestions li svg {
+            flex: none;
+            width: 16px;
+            height: 16px;
+            color: var(--muted);
+        }
+
+        .suggestions li[aria-selected="true"],
+        .suggestions li:hover {
+            background: var(--hover);
+        }
+
+        .suggestions .typed {
+            font-weight: 400;
+        }
+
+        .suggestions .rest {
+            font-weight: 600;
+        }
+
+        .spelling {
+            margin: 14px 0 -8px;
+            font-size: 15px;
+        }
+
+        .spelling a {
+            font-weight: 600;
+            font-style: italic;
+        }
+
+        .spelling .muted {
+            color: var(--muted);
+            font-size: 14px;
+        }
+
         .search-field {
             display: flex;
             align-items: center;
@@ -534,6 +600,7 @@
     </header>
 
     <main class="results-main">
+        <p class="spelling" id="spelling" hidden></p>
         <p class="stats" id="stats" role="status" aria-live="polite"></p>
         <ol class="results" id="results"></ol>
         <nav class="pager" id="pager" aria-label="Pages"></nav>
@@ -585,14 +652,115 @@
         const clear = node.querySelector(".clear-button");
         input.id = id;
         node.querySelector("label").htmlFor = id;
-        input.addEventListener("input", () => { clear.hidden = input.value === ""; });
+
+        // Autocomplete list (ARIA combobox pattern).
+        const list = document.createElement("ul");
+        list.className = "suggestions";
+        list.id = id + "-suggestions";
+        list.setAttribute("role", "listbox");
+        list.hidden = true;
+        node.appendChild(list);
+        input.setAttribute("role", "combobox");
+        input.setAttribute("aria-autocomplete", "list");
+        input.setAttribute("aria-controls", list.id);
+        input.setAttribute("aria-expanded", "false");
+
+        let items = [];
+        let active = -1;
+        let typed = "";
+        let timer = 0;
+        let sequence = 0;
+
+        function close() {
+            list.hidden = true;
+            node.classList.remove("open");
+            input.setAttribute("aria-expanded", "false");
+            input.removeAttribute("aria-activedescendant");
+            active = -1;
+        }
+
+        function highlight(index) {
+            active = index;
+            Array.from(list.children).forEach((li, i) => li.setAttribute("aria-selected", String(i === index)));
+            if (index >= 0) {
+                input.setAttribute("aria-activedescendant", list.children[index].id);
+                input.value = items[index];
+            } else {
+                input.removeAttribute("aria-activedescendant");
+                input.value = typed;
+            }
+        }
+
+        function show(suggestions) {
+            items = suggestions.filter(s => s.toLowerCase() !== typed.trim().toLowerCase());
+            list.innerHTML = "";
+            if (!items.length || document.activeElement !== input) { close(); return; }
+            items.forEach((text, i) => {
+                const li = document.createElement("li");
+                li.id = list.id + "-" + i;
+                li.setAttribute("role", "option");
+                const lower = text.toLowerCase();
+                const prefix = typed.trim().toLowerCase();
+                const split = lower.startsWith(prefix) ? prefix.length : 0;
+                li.innerHTML = '<svg aria-hidden="true"><use href="#icon-search"/></svg><span><span class="typed">' +
+                    escapeHtml(text.slice(0, split)) + '</span><span class="rest">' + escapeHtml(text.slice(split)) + "</span></span>";
+                // mousedown (not click) so the input does not blur first.
+                li.addEventListener("mousedown", event => {
+                    event.preventDefault();
+                    input.value = text;
+                    close();
+                    node.requestSubmit();
+                });
+                list.appendChild(li);
+            });
+            active = -1;
+            list.hidden = false;
+            node.classList.add("open");
+            input.setAttribute("aria-expanded", "true");
+        }
+
+        input.addEventListener("input", () => {
+            clear.hidden = input.value === "";
+            typed = input.value;
+            clearTimeout(timer);
+            if (!typed.trim()) { close(); return; }
+            const mine = ++sequence;
+            timer = setTimeout(async () => {
+                try {
+                    const response = await fetch("/suggest?q=" + encodeURIComponent(typed));
+                    const data = await response.json();
+                    if (mine === sequence) show(data.suggestions || []);
+                } catch (e) { close(); }
+            }, 120);
+        });
+
+        input.addEventListener("keydown", event => {
+            if (list.hidden) return;
+            if (event.key === "ArrowDown") {
+                event.preventDefault();
+                highlight(active + 1 >= items.length ? -1 : active + 1);
+            } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                highlight(active - 1 < -1 ? items.length - 1 : active - 1);
+            } else if (event.key === "Escape") {
+                event.preventDefault();
+                input.value = typed;
+                close();
+            }
+        });
+
+        input.addEventListener("blur", close);
+
         clear.addEventListener("click", () => {
             input.value = "";
+            typed = "";
             clear.hidden = true;
+            close();
             input.focus();
         });
         node.addEventListener("submit", event => {
             event.preventDefault();
+            close();
             const q = input.value.trim();
             if (q) navigate({ q: q, page: 1 });
             else input.focus();
@@ -600,7 +768,7 @@
         container.appendChild(node);
         return {
             input: input,
-            set(value) { input.value = value; clear.hidden = value === ""; }
+            set(value) { input.value = value; typed = value; clear.hidden = value === ""; close(); }
         };
     }
 
@@ -656,6 +824,7 @@
     const home = document.getElementById("home");
     const resultsPage = document.getElementById("results-page");
     const stats = document.getElementById("stats");
+    const spelling = document.getElementById("spelling");
     const list = document.getElementById("results");
     const pager = document.getElementById("pager");
 
@@ -691,6 +860,7 @@
         let mode = detectMode(state.q);
 
         stats.textContent = "";
+        spelling.hidden = true;
         pager.innerHTML = "";
         showSkeleton();
 
@@ -720,10 +890,30 @@
             '<span style="width:96%"></span><span style="width:78%"></span></li>').join("");
     }
 
+    function showSpelling(data) {
+        if (data.correctedFrom) {
+            spelling.hidden = false;
+            spelling.innerHTML = 'Showing results for <a href="#">' + escapeHtml(data.suggestion) + "</a>" +
+                '<br><span class="muted">No results for ' + escapeHtml(data.correctedFrom) + "</span>";
+            spelling.querySelector("a").addEventListener("click", event => {
+                event.preventDefault();
+                navigate({ q: data.suggestion, page: 1 });
+            });
+        } else if (data.suggestion) {
+            spelling.hidden = false;
+            spelling.innerHTML = 'Did you mean: <a href="#">' + escapeHtml(data.suggestion) + "</a>";
+            spelling.querySelector("a").addEventListener("click", event => {
+                event.preventDefault();
+                navigate({ q: data.suggestion, page: 1 });
+            });
+        }
+    }
+
     function showResults(data, offset, mode) {
         const results = data.results || [];
         list.className = "results";
         list.innerHTML = "";
+        showSpelling(data);
 
         const took = typeof data.tookMs === "number" ? formatMillis(data.tookMs) : "";
         if (results.length === 0) {
@@ -742,7 +932,8 @@
             stats.textContent = (state.page > 1 ? "Page " + state.page : "Top results") + " (" + took + ")";
         }
 
-        const terms = highlightTerms(state.q);
+        // Bold the words of the query the results are actually for.
+        const terms = highlightTerms(data.correctedFrom ? data.suggestion : state.q);
         for (const result of results) list.appendChild(resultItem(result, terms));
         renderPager(data, results.length);
     }

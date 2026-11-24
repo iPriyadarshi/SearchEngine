@@ -16,6 +16,8 @@ package com.searchengine.index.disk;
  * docs.idx          8-byte offset of each document's record in docs.dat
  * pagerank.bin      int count, then each document's PageRank as a float (mean 1.0)
  * domainrank.bin    int count, then each document's site popularity rank (0 = unranked)
+ * vocab.bin         words and document counts, for spelling correction
+ * suggest.bin       autocomplete phrases (sorted) with popularity scores
  * </pre>
  *
  * Besides body terms, the dictionary holds field terms marked by a prefix
@@ -60,6 +62,10 @@ public final class IndexFiles {
     static final String PAGERANK = "pagerank.bin";
 
     static final String DOMAIN_RANK = "domainrank.bin";
+
+    static final String VOCABULARY = "vocab.bin";
+
+    static final String SUGGESTIONS = "suggest.bin";
 
     public static final String TITLE_FIELD = "~";
 

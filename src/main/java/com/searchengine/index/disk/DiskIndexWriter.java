@@ -95,6 +95,8 @@ public class DiskIndexWriter implements Closeable {
 
     private final LinkGraph links;
 
+    private final QueryAidsBuilder aids = new QueryAidsBuilder();
+
     private final IntList domainRanks = new IntList();
 
     private Map<String, Integer> domainRankTable = Map.of();
@@ -392,11 +394,15 @@ public class DiskIndexWriter implements Closeable {
 
         docsIndex.writeLong(docsData.position());
 
+        String snippet = snippetText(doc);
+
         docsData.writeString(doc.getTitle());
 
         docsData.writeString(doc.getPath() == null ? "" : doc.getPath());
 
-        docsData.writeString(snippetText(doc));
+        docsData.writeString(snippet);
+
+        aids.addDocument(docLengths.size() - 1, doc.getTitle(), snippet);
     }
 
     private static String snippetText(Document doc) {
@@ -530,7 +536,11 @@ public class DiskIndexWriter implements Closeable {
 
         writeFloats(IndexFiles.PAGERANK, pageRank);
 
-        writeInts(IndexFiles.DOMAIN_RANK, domainRanks.toArray());
+        int[] siteRanks = domainRanks.toArray();
+
+        writeInts(IndexFiles.DOMAIN_RANK, siteRanks);
+
+        aids.write(dir, pageRank, siteRanks);
 
         if (skippedDuplicates > 0) {
 

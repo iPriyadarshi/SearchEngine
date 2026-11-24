@@ -41,6 +41,8 @@ public class DiskSearchBackend implements SearchBackend {
 
     private final WebRanker web;
 
+    private final QueryAids aids;
+
     public DiskSearchBackend(DiskIndex index, Parser parser, Path location) {
 
         this.index = index;
@@ -62,6 +64,51 @@ public class DiskSearchBackend implements SearchBackend {
         this.bool = new BooleanSearcher(index, this::analyze);
 
         this.web = new WebRanker(index, parser, WebRanker.Weights.defaults());
+
+        QueryAids loaded;
+
+        try {
+
+            loaded = QueryAids.load(location);
+
+        } catch (java.io.IOException e) {
+
+            loaded = QueryAids.of(java.util.Map.of(), List.of());
+        }
+
+        this.aids = loaded;
+    }
+
+    @Override
+    public List<String> complete(String prefix) {
+
+        return aids.complete(prefix);
+    }
+
+    /**
+     * Offer a spelling correction; when the query found nothing, answer the
+     * corrected query instead.
+     */
+    private Hits withSpelling(String query, Hits hits, java.util.function.Function<String, Hits> rerun) {
+
+        String fixed = aids.correct(query);
+
+        if (fixed == null) {
+
+            return hits;
+        }
+
+        if (hits.hits().isEmpty()) {
+
+            Hits corrected = rerun.apply(fixed);
+
+            if (!corrected.hits().isEmpty()) {
+
+                return corrected.corrected(query, fixed);
+            }
+        }
+
+        return hits.withSuggestion(fixed);
     }
 
     /**
@@ -99,7 +146,14 @@ public class DiskSearchBackend implements SearchBackend {
         // scores, useful for comparison.
         TopDocs top = ranker.equals("bm25") ? web.search(query, limit) : topK.search(analyze(query), similarity, limit);
 
-        return toHits(ranker, query, top, start);
+        return withSpelling(query, toHits(ranker, query, top, start), fixed -> {
+
+            long again = System.nanoTime();
+
+            TopDocs retry = ranker.equals("bm25") ? web.search(fixed, limit) : topK.search(analyze(fixed), similarity, limit);
+
+            return toHits(ranker, fixed, retry, again);
+        });
     }
 
     @Override
@@ -107,7 +161,8 @@ public class DiskSearchBackend implements SearchBackend {
 
         long start = System.nanoTime();
 
-        return toHits("phrase", query, phrase.search(analyze(query), limit), start);
+        return withSpelling(query, toHits("phrase", query, phrase.search(analyze(query), limit), start),
+                fixed -> toHits("phrase", fixed, phrase.search(analyze(fixed), limit), System.nanoTime()));
     }
 
     @Override

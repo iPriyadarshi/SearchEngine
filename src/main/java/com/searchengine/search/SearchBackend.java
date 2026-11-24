@@ -57,8 +57,35 @@ public interface SearchBackend extends Closeable {
     }
 
     /**
-     * @param total number of matching documents, or -1 if not counted
+     * Completions for a partly typed query, most popular first.
      */
-    record Hits(String mode, List<Hit> hits, long total, double tookMillis) {
+    default List<String> complete(String prefix) {
+
+        return List.of();
+    }
+
+    /**
+     * @param total         number of matching documents, or -1 if not counted
+     * @param suggestion    a spelling-corrected query to offer ("Did you mean"), or null
+     * @param correctedFrom when the results are for the corrected query (in
+     *                      {@code suggestion}) because the original found nothing:
+     *                      the original query; otherwise null
+     */
+    record Hits(String mode, List<Hit> hits, long total, double tookMillis, String suggestion, String correctedFrom) {
+
+        public Hits(String mode, List<Hit> hits, long total, double tookMillis) {
+
+            this(mode, hits, total, tookMillis, null, null);
+        }
+
+        Hits withSuggestion(String suggestion) {
+
+            return new Hits(mode, hits, total, tookMillis, suggestion, null);
+        }
+
+        Hits corrected(String original, String fixed) {
+
+            return new Hits(mode, hits, total, tookMillis, fixed, original);
+        }
     }
 }
