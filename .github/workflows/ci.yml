@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "26"
+          cache: maven
+
+      - name: Test and package
+        run: mvn -B verify
+
+      - name: Smoke test the jar
+        run: |
+          java -jar target/searchengine.jar --build-index --out /tmp/idx --folder data/raw
+          java -jar target/searchengine.jar --index /tmp/idx inverted index | tee /tmp/out.txt
+          grep -q "doc=" /tmp/out.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: searchengine-jar
+          path: target/searchengine.jar
