@@ -19,7 +19,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Iterator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -42,6 +45,9 @@ import java.util.stream.Stream;
  * {@code .bz2}/{@code .xml}/{@code .gz} dump in it is indexed in part order
  * (e.g. the 27 {@code enwiki-...-multistreamN.xml-pA pB.bz2} part files).
  *
+ * {@code --domain-ranks top-1m.csv} records each page's site popularity
+ * (Tranco "rank,domain" format) as a ranking signal.
+ * <p>
  * {@code --mem-mb} is the postings buffer budget before a segment is flushed
  * (default: a third of the max heap). {@code --threads} sizes both the
  * analysis pool and, for multistream bzip2 dumps, the decompression pool
@@ -65,6 +71,8 @@ final class BuildIndexCommand {
         List<String> warcs = new ArrayList<>();
 
         Path corpus = null;
+
+        Path domainRankFile = null;
 
         String ccCrawl = null;
 
@@ -96,6 +104,8 @@ final class BuildIndexCommand {
                 case "--wiki" -> wikiDumps.addAll(dumpFiles(Path.of(value)));
 
                 case "--corpus" -> corpus = Path.of(value);
+
+                case "--domain-ranks" -> domainRankFile = Path.of(value);
 
                 case "--warc" -> warcs.add(value);
 
@@ -137,6 +147,14 @@ final class BuildIndexCommand {
         Parser parser = Main.buildParser();
 
         try (DiskIndexWriter writer = new DiskIndexWriter(out, parser, memoryBudget, System.out::println)) {
+
+            // Web pages repeat across URLs and mirrors; index each only once.
+            writer.setDeduplicate(corpus != null || !warcs.isEmpty());
+
+            if (domainRankFile != null) {
+
+                writer.setDomainRanks(readDomainRanks(domainRankFile));
+            }
 
             if (corpus != null) {
 
@@ -186,6 +204,38 @@ final class BuildIndexCommand {
 
         System.out.printf("Index ready in %.1fs, %,d MB on disk.%n",
                 (System.nanoTime() - start) / 1e9, directorySize(out) >> 20);
+    }
+
+    /**
+     * Tranco-style "rank,domain" CSV (https://tranco-list.eu/) into domain -> rank.
+     */
+    static Map<String, Integer> readDomainRanks(Path csv) throws IOException {
+
+        Map<String, Integer> ranks = new HashMap<>(2_000_000);
+
+        try (Stream<String> lines = Files.lines(csv)) {
+
+            lines.forEach(line -> {
+
+                int comma = line.indexOf(',');
+
+                if (comma > 0) {
+
+                    try {
+
+                        ranks.putIfAbsent(line.substring(comma + 1).strip().toLowerCase(Locale.ROOT),
+                                Integer.parseInt(line.substring(0, comma).strip()));
+
+                    } catch (NumberFormatException ignored) {
+                        // Header or malformed line.
+                    }
+                }
+            });
+        }
+
+        System.out.printf("  loaded %,d domain ranks from %s%n", ranks.size(), csv);
+
+        return ranks;
     }
 
     /**
@@ -324,6 +374,7 @@ final class BuildIndexCommand {
         return new IllegalArgumentException(problem + System.lineSeparator()
                 + "usage: --build-index --out <dir> (--wiki <dump|dir>... | --warc <file|url>..."
                 + " | --cc <crawl> [--cc-files n] [--cc-start k] | --corpus <dir> | --folder <dir> | --html <dir>)"
+                + " [--domain-ranks <csv>]"
                 + " [--max-docs n] [--mem-mb n] [--threads n]");
     }
 }

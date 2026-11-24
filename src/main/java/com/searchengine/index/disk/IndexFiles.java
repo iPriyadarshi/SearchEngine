@@ -14,7 +14,14 @@ package com.searchengine.index.disk;
  * doclens.bin       int count, then the token length of every document
  * docs.dat          stored fields per document: title, path, snippet text
  * docs.idx          8-byte offset of each document's record in docs.dat
+ * pagerank.bin      int count, then each document's PageRank as a float (mean 1.0)
+ * domainrank.bin    int count, then each document's site popularity rank (0 = unranked)
  * </pre>
+ *
+ * Besides body terms, the dictionary holds field terms marked by a prefix
+ * the tokenizer can never produce: {@value #TITLE_FIELD} title,
+ * {@value #URL_FIELD} URL (host and path words), {@value #ANCHOR_FIELD} anchor
+ * text of links pointing at the document.
  *
  * Skip table entry (all big-endian ints, {@value #SKIP_ENTRY_BYTES} bytes):
  * last doc id in block, block offset in postings.doc (relative to the term's
@@ -22,7 +29,7 @@ package com.searchengine.index.disk;
  * min document length in block. The last two let rankers compute per-block
  * score upper bounds.
  */
-final class IndexFiles {
+public final class IndexFiles {
 
     static final int FORMAT_VERSION = 1;
 
@@ -49,6 +56,16 @@ final class IndexFiles {
     static final String DOCS_INDEX = "docs.idx";
 
     static final String TEMP_DIR = "tmp";
+
+    static final String PAGERANK = "pagerank.bin";
+
+    static final String DOMAIN_RANK = "domainrank.bin";
+
+    public static final String TITLE_FIELD = "~";
+
+    public static final String URL_FIELD = "^";
+
+    public static final String ANCHOR_FIELD = "@";
 
     private IndexFiles() {
     }

@@ -133,9 +133,11 @@ public final class ParallelIndexer {
                         break;
                     }
 
-                    writer.add(analyzed.doc(), analyzed.tokens());
+                    // -1 means the writer skipped a duplicate.
+                    if (writer.add(analyzed.doc(), analyzed.tokens()) >= 0) {
 
-                    added++;
+                        added++;
+                    }
                 }
             }
 

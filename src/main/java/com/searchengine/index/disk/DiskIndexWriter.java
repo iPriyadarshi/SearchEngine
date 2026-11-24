@@ -8,6 +8,7 @@ import java.io.Closeable;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,10 +16,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Properties;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -36,6 +40,13 @@ import java.util.function.Consumer;
  * </ol>
  * Document ids are assigned sequentially in the order documents are added;
  * the source document's own id is ignored.
+ * <p>
+ * Besides the body, each document's title and URL words are indexed as
+ * prefixed field terms ({@link IndexFiles#TITLE_FIELD}, {@link IndexFiles#URL_FIELD}).
+ * Outgoing links feed a {@link LinkGraph}; on close, anchor text is indexed as
+ * a field of the pages it points to ({@link IndexFiles#ANCHOR_FIELD}) and
+ * PageRank is computed. With {@link #setDeduplicate} on, a page whose URL or
+ * text was already added is skipped ({@link #add} returns -1).
  */
 public class DiskIndexWriter implements Closeable {
 
@@ -82,6 +93,23 @@ public class DiskIndexWriter implements Closeable {
 
     private boolean closed;
 
+    private final LinkGraph links;
+
+    private final IntList domainRanks = new IntList();
+
+    private Map<String, Integer> domainRankTable = Map.of();
+
+    private boolean deduplicate;
+
+    private final Set<Long> contentHashes = new HashSet<>();
+
+    private int skippedDuplicates;
+
+    // URL words that carry no meaning.
+    private static final Set<String> URL_NOISE = Set.of(
+            "www", "http", "https", "com", "org", "net", "html", "htm", "php", "asp", "aspx", "jsp", "index",
+            "default", "en", "us", "uk", "amp");
+
     /**
      * @param dir          output directory (created if missing; must not contain an index)
      * @param memoryBudget approximate heap bytes to spend on buffered postings before flushing a segment
@@ -109,6 +137,30 @@ public class DiskIndexWriter implements Closeable {
         this.docsData = new IndexOutput(dir.resolve(IndexFiles.DOCS_DATA));
 
         this.docsIndex = new IndexOutput(dir.resolve(IndexFiles.DOCS_INDEX));
+
+        this.links = new LinkGraph(tempDir);
+    }
+
+    /**
+     * Skip documents whose URL or text duplicates one already added.
+     */
+    public void setDeduplicate(boolean deduplicate) {
+
+        this.deduplicate = deduplicate;
+    }
+
+    /**
+     * Site popularity ranks (domain, e.g. "python.org", to rank 1..N) recorded
+     * for each added document.
+     */
+    public void setDomainRanks(Map<String, Integer> ranks) {
+
+        this.domainRankTable = ranks;
+    }
+
+    public int skippedDuplicates() {
+
+        return skippedDuplicates;
     }
 
     public DiskIndexWriter(Path dir, Parser parser, long memoryBudget) throws IOException {
@@ -135,6 +187,27 @@ public class DiskIndexWriter implements Closeable {
             throw new IllegalStateException("Writer is closed");
         }
 
+        String url = doc.getPath() == null ? "" : doc.getPath();
+
+        if (deduplicate) {
+
+            if (!url.isEmpty() && links.contains(url)) {
+
+                skippedDuplicates++;
+
+                return -1;
+            }
+
+            String content = doc.getContent() == null ? "" : doc.getContent();
+
+            if (content.length() >= 200 && !contentHashes.add(LinkGraph.hash(content))) {
+
+                skippedDuplicates++;
+
+                return -1;
+            }
+        }
+
         int docId = docLengths.size();
 
         docLengths.add(tokens.size());
@@ -143,7 +216,49 @@ public class DiskIndexWriter implements Closeable {
 
         storeDocument(doc);
 
+        links.addPage(docId, url, doc.getLinks());
+
+        domainRanks.add(domainRank(url));
+
         docPositions.clear();
+
+        addField("", tokens);
+
+        if (!doc.getTitle().isEmpty()) {
+
+            addField(IndexFiles.TITLE_FIELD, analyze(doc.getTitle()));
+        }
+
+        String urlWords = urlWords(url);
+
+        if (!urlWords.isEmpty()) {
+
+            addField(IndexFiles.URL_FIELD, analyze(urlWords));
+        }
+
+        bufferPostings(docId);
+
+        if ((docId + 1) % PROGRESS_INTERVAL == 0) {
+
+            double seconds = (System.nanoTime() - startNanos) / 1e9;
+
+            log.accept(String.format("  indexed %,d docs (%,.0f docs/s), %d segment(s) flushed",
+                    docId + 1, (docId + 1) / seconds, segments.size()));
+        }
+
+        return docId;
+    }
+
+    private List<String> analyze(String text) {
+
+        return parser.parse(new Document(-1, text, ""));
+    }
+
+    /**
+     * Record a field's tokens for the current document, positions counted
+     * within the field.
+     */
+    private void addField(String prefix, List<String> tokens) {
 
         for (int position = 0; position < tokens.size(); position++) {
 
@@ -151,9 +266,93 @@ public class DiskIndexWriter implements Closeable {
 
             if (!token.isEmpty() && token.length() <= MAX_TERM_LENGTH) {
 
-                docPositions.computeIfAbsent(token, k -> new IntList()).add(position);
+                docPositions.computeIfAbsent(prefix + token, k -> new IntList()).add(position);
             }
         }
+    }
+
+    /**
+     * Host and path words of a URL, e.g. "https://docs.python.org/3/tutorial/"
+     * gives "docs python 3 tutorial".
+     */
+    public static String urlWords(String url) {
+
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+
+            return "";
+        }
+
+        String rest = url.substring(url.indexOf("://") + 3);
+
+        int query = rest.indexOf('?');
+
+        if (query >= 0) {
+
+            rest = rest.substring(0, query);
+        }
+
+        StringBuilder words = new StringBuilder();
+
+        for (String word : rest.toLowerCase(Locale.ROOT).split("[^a-z0-9]+")) {
+
+            // Long digit runs are ids, not words.
+            boolean id = word.length() > 4 && word.chars().allMatch(Character::isDigit);
+
+            if (!word.isEmpty() && !URL_NOISE.contains(word) && !id) {
+
+                words.append(word).append(' ');
+            }
+        }
+
+        return words.toString().strip();
+    }
+
+    private int domainRank(String url) {
+
+        if (domainRankTable.isEmpty() || url.isEmpty()) {
+
+            return 0;
+        }
+
+        String host;
+
+        try {
+
+            host = URI.create(url).getHost();
+
+        } catch (IllegalArgumentException e) {
+
+            return 0;
+        }
+
+        if (host == null) {
+
+            return 0;
+        }
+
+        // Try the full host, then each parent domain: docs.python.org, python.org.
+        String candidate = host.toLowerCase(Locale.ROOT);
+
+        while (candidate.contains(".")) {
+
+            Integer rank = domainRankTable.get(candidate);
+
+            if (rank != null) {
+
+                return rank;
+            }
+
+            candidate = candidate.substring(candidate.indexOf('.') + 1);
+        }
+
+        return 0;
+    }
+
+    /**
+     * Move the current document's positions into the per-term buffers and
+     * flush a segment if the memory budget is exceeded.
+     */
+    private void bufferPostings(int docId) throws IOException {
 
         for (Map.Entry<String, IntList> entry : docPositions.entrySet()) {
 
@@ -175,16 +374,6 @@ public class DiskIndexWriter implements Closeable {
 
             flushSegment();
         }
-
-        if ((docId + 1) % PROGRESS_INTERVAL == 0) {
-
-            double seconds = (System.nanoTime() - startNanos) / 1e9;
-
-            log.accept(String.format("  indexed %,d docs (%,.0f docs/s), %d segment(s) flushed",
-                    docId + 1, (docId + 1) / seconds, segments.size()));
-        }
-
-        return docId;
     }
 
     public int documentCount() {
@@ -294,6 +483,47 @@ public class DiskIndexWriter implements Closeable {
 
         writeDocLengths(lengths);
 
+        // Anchor text is replayed in ascending target order, so it can be buffered like any field.
+        float[] pageRank = links.finish(lengths.length, (docId, anchors) -> {
+
+            docPositions.clear();
+
+            int offset = 0;
+
+            for (String anchor : anchors) {
+
+                List<String> tokens = analyze(anchor);
+
+                for (int i = 0; i < tokens.size(); i++) {
+
+                    String token = tokens.get(i);
+
+                    if (!token.isEmpty() && token.length() <= MAX_TERM_LENGTH) {
+
+                        docPositions.computeIfAbsent(IndexFiles.ANCHOR_FIELD + token, k -> new IntList()).add(offset + i);
+                    }
+                }
+
+                // A gap keeps phrases from spanning two different anchors.
+                offset += tokens.size() + 10;
+            }
+
+            bufferPostings(docId);
+        });
+
+        flushSegment();
+
+        links.close();
+
+        writeFloats(IndexFiles.PAGERANK, pageRank);
+
+        writeInts(IndexFiles.DOMAIN_RANK, domainRanks.toArray());
+
+        if (skippedDuplicates > 0) {
+
+            log.accept(String.format("  skipped %,d duplicate page(s)", skippedDuplicates));
+        }
+
         log.accept(String.format("  merging %d segment(s)...", segments.size()));
 
         long termCount = merge(lengths);
@@ -309,6 +539,32 @@ public class DiskIndexWriter implements Closeable {
 
         log.accept(String.format("  done: %,d docs, %,d terms, %,d tokens in %.1fs",
                 lengths.length, termCount, totalTokens, (System.nanoTime() - startNanos) / 1e9));
+    }
+
+    private void writeFloats(String name, float[] values) throws IOException {
+
+        try (IndexOutput out = new IndexOutput(dir.resolve(name))) {
+
+            out.writeInt(values.length);
+
+            for (float value : values) {
+
+                out.writeInt(Float.floatToIntBits(value));
+            }
+        }
+    }
+
+    private void writeInts(String name, int[] values) throws IOException {
+
+        try (IndexOutput out = new IndexOutput(dir.resolve(name))) {
+
+            out.writeInt(values.length);
+
+            for (int value : values) {
+
+                out.writeInt(value);
+            }
+        }
     }
 
     private void writeDocLengths(int[] lengths) throws IOException {

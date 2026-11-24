@@ -49,6 +49,11 @@ public class DiskIndex implements Closeable {
 
     private final int[] docLengths;
 
+    // Per-document ranking signals; absent in indexes built without them.
+    private final float[] pageRank;
+
+    private final int[] domainRanks;
+
     private final int numDocs;
 
     private final long totalTokens;
@@ -106,6 +111,10 @@ public class DiskIndex implements Closeable {
 
             docLengths = readDocLengths(dir.resolve(IndexFiles.DOC_LENGTHS));
 
+            pageRank = readFloats(dir.resolve(IndexFiles.PAGERANK));
+
+            domainRanks = readInts(dir.resolve(IndexFiles.DOMAIN_RANK));
+
         } catch (IOException | RuntimeException e) {
 
             arena.close();
@@ -132,6 +141,52 @@ public class DiskIndex implements Closeable {
 
             return lengths;
         }
+    }
+
+    private static float[] readFloats(Path file) throws IOException {
+
+        int[] bits = readInts(file);
+
+        if (bits == null) {
+
+            return null;
+        }
+
+        float[] values = new float[bits.length];
+
+        for (int i = 0; i < bits.length; i++) {
+
+            values[i] = Float.intBitsToFloat(bits[i]);
+        }
+
+        return values;
+    }
+
+    private static int[] readInts(Path file) throws IOException {
+
+        if (!Files.exists(file)) {
+
+            return null;
+        }
+
+        return readDocLengths(file);
+    }
+
+    /**
+     * PageRank of a document, scaled so the corpus mean is 1.0 (1.0 when the
+     * index has no link data).
+     */
+    public float pageRank(int docId) {
+
+        return pageRank == null ? 1f : pageRank[docId];
+    }
+
+    /**
+     * Popularity rank of the document's site (1 = most popular), or 0 if unranked.
+     */
+    public int domainRank(int docId) {
+
+        return domainRanks == null ? 0 : domainRanks[docId];
     }
 
     /**
