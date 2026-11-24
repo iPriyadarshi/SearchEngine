@@ -3,6 +3,7 @@ package com.searchengine;
 import com.searchengine.document.model.Document;
 import com.searchengine.web.CommonCrawlSource;
 import com.searchengine.web.Corpus;
+import com.searchengine.web.ResumableDownload;
 import com.searchengine.web.WarcReader;
 
 import java.io.IOException;
@@ -30,10 +31,11 @@ import java.util.concurrent.atomic.AtomicLong;
  *            [--parallel-files p] [--threads t]
  * </pre>
  *
- * Several WARC files stream at once (network-bound) while a shared worker
- * pool parses and filters pages (CPU-bound). The command is resumable: a WARC
- * whose corpus file already exists is skipped, and a file that fails is
- * retried, then left for the next run.
+ * Several WARC files download at once (network-bound) while a shared worker
+ * pool parses and filters pages (CPU-bound). Each WARC is downloaded to disk
+ * first, resuming with HTTP Range requests after dropped connections, then
+ * read locally and deleted. The command is resumable: a WARC whose corpus
+ * file already exists is skipped, and a partial download is continued.
  */
 final class FetchCommand {
 
@@ -151,13 +153,35 @@ final class FetchCommand {
     }
 
     /**
-     * Stream one WARC, extract its pages on the shared pool, and write them in
-     * file order to a corpus file.
+     * Download one WARC (resuming after dropped connections), extract its
+     * pages on the shared pool, write them in file order to a corpus file, and
+     * delete the download.
      */
     private static int fetchOne(String warc, Path target, ExecutorService extractors, int threads)
             throws IOException, InterruptedException, ExecutionException {
 
-        CommonCrawlSource source = new CommonCrawlSource(List.of(warc), message -> { });
+        Path downloads = target.toAbsolutePath().getParent().resolve(".download");
+
+        Files.createDirectories(downloads);
+
+        Path local = downloads.resolve(warc.substring(warc.lastIndexOf('/') + 1));
+
+        ResumableDownload.fetch(warc, local);
+
+        try {
+
+            return extract(local.toString(), warc, target, extractors, threads);
+
+        } finally {
+
+            Files.deleteIfExists(local);
+        }
+    }
+
+    private static int extract(String location, String warc, Path target, ExecutorService extractors, int threads)
+            throws IOException, InterruptedException, ExecutionException {
+
+        CommonCrawlSource source = new CommonCrawlSource(List.of(location), message -> { });
 
         try (CommonCrawlSource.Records records = source.records(); Corpus.Writer writer = new Corpus.Writer(target)) {
 
@@ -194,7 +218,7 @@ final class FetchCommand {
 
             if (records.failed()) {
 
-                throw new IOException("stream for " + warc + " ended early");
+                throw new IOException("unreadable WARC " + warc);
             }
 
             writer.commit();
