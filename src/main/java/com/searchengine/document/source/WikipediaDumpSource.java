@@ -127,7 +127,10 @@ public class WikipediaDumpSource implements DocumentSource {
             return null;
         }
 
-        return new Document(0, page.title(), page.title() + "\n\n" + text, page.url());
+        String prefix = page.url().substring(0, page.url().length() - page.title().replace(' ', '_').length());
+
+        return new Document(0, page.title(), "", page.title() + "\n\n" + text, page.url(),
+                WikitextCleaner.links(page.wikitext(), prefix));
     }
 
     private Stream<WikiPage> rawPages(long limit) throws IOException {

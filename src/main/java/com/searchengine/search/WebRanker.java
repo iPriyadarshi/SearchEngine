@@ -57,7 +57,7 @@ public final class WebRanker {
             return new Weights(2.0, 1.5, 1.5, 0.5, 3.0, 2.0, 2.0, 3.0, 0.3);
         }
 
-        Weights with(int index, double value) {
+        public Weights with(int index, double value) {
 
             double[] v = toArray();
 
@@ -66,12 +66,12 @@ public final class WebRanker {
             return new Weights(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
         }
 
-        double[] toArray() {
+        public double[] toArray() {
 
             return new double[]{title, url, anchor, pageRank, domain, titleCoverage, exactTitle, homepage, depth};
         }
 
-        static final String[] NAMES = {"title", "url", "anchor", "pageRank", "domain", "titleCoverage",
+        public static final String[] NAMES = {"title", "url", "anchor", "pageRank", "domain", "titleCoverage",
                 "exactTitle", "homepage", "depth"};
     }
 
@@ -253,13 +253,25 @@ public final class WebRanker {
         return slash < 0 ? url : url.substring(0, slash + 1);
     }
 
-    private static boolean isHomepage(String url) {
+    private static final java.util.regex.Pattern LOCALE_HOME =
+            java.util.regex.Pattern.compile("/[a-z]{2}(-[a-z]{2})?/?", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /**
+     * "https://site/" or a locale home such as "https://site/en-us/" (many
+     * sites redirect their root there).
+     */
+    static boolean isHomepage(String url) {
 
         int start = url.indexOf("://") + 3;
 
         int slash = url.indexOf('/', start);
 
-        return slash < 0 || url.length() == slash + 1;
+        if (slash < 0 || url.length() == slash + 1) {
+
+            return true;
+        }
+
+        return LOCALE_HOME.matcher(url.substring(slash)).matches();
     }
 
     private static int depth(String url) {

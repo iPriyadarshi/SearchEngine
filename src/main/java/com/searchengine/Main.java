@@ -66,6 +66,13 @@ public class Main {
             return;
         }
 
+        if (args.length > 0 && args[0].equals("--eval")) {
+
+            EvalCommand.run(Arrays.copyOfRange(args, 1, args.length));
+
+            return;
+        }
+
         if (args.length > 0 && args[0].equals("--crawl-web")) {
 
             CrawlCommand.run(Arrays.copyOfRange(args, 1, args.length));
@@ -498,6 +505,9 @@ public class Main {
                 Download Common Crawl pages into a local corpus (resumable):
                   --fetch-cc --cc <crawl> --cc-files n [--cc-start k] --corpus <dir>
                              [--parallel-files p] [--threads t]
+
+                Measure ranking quality on judged queries (query<TAB>answer|answer):
+                  --eval --index <dir> [--queries eval/web-queries.tsv] [--verbose] [--tune]
 
                 Benchmark query latency on an on-disk index:
                   --bench --index <dir> [--queries n] [--threads n] [--k n]""");

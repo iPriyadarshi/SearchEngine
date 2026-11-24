@@ -70,7 +70,7 @@ final class BuildIndexCommand {
 
         List<String> warcs = new ArrayList<>();
 
-        Path corpus = null;
+        List<Path> corpora = new ArrayList<>();
 
         Path domainRankFile = null;
 
@@ -103,7 +103,7 @@ final class BuildIndexCommand {
 
                 case "--wiki" -> wikiDumps.addAll(dumpFiles(Path.of(value)));
 
-                case "--corpus" -> corpus = Path.of(value);
+                case "--corpus" -> corpora.add(Path.of(value));
 
                 case "--domain-ranks" -> domainRankFile = Path.of(value);
 
@@ -134,7 +134,7 @@ final class BuildIndexCommand {
             warcs.addAll(CommonCrawlSource.crawlFiles(ccCrawl, ccStart, ccFiles));
         }
 
-        if (out == null || (corpus == null && wikiDumps.isEmpty() && warcs.isEmpty() && folder == null && html == null)) {
+        if (out == null || (corpora.isEmpty() && wikiDumps.isEmpty() && warcs.isEmpty() && folder == null && html == null)) {
 
             throw usage("--out and a source (--corpus, --wiki, --warc, --cc, --folder, --html) are required");
         }
@@ -149,14 +149,18 @@ final class BuildIndexCommand {
         try (DiskIndexWriter writer = new DiskIndexWriter(out, parser, memoryBudget, System.out::println)) {
 
             // Web pages repeat across URLs and mirrors; index each only once.
-            writer.setDeduplicate(corpus != null || !warcs.isEmpty());
+            writer.setDeduplicate(!corpora.isEmpty() || !warcs.isEmpty());
 
             if (domainRankFile != null) {
 
                 writer.setDomainRanks(readDomainRanks(domainRankFile));
             }
 
-            if (corpus != null) {
+            // Sources can be combined (e.g. crawled pages + Common Crawl + Wikipedia);
+            // they share one index, link graph and --max-docs budget.
+            long remaining = maxDocs;
+
+            for (Path corpus : corpora) {
 
                 List<Path> files = Corpus.files(corpus);
 
@@ -164,28 +168,31 @@ final class BuildIndexCommand {
 
                 try (Corpus.Reader pages = Corpus.read(files)) {
 
-                    ParallelIndexer.index(pages, Function.identity(), parser, writer, threads, maxDocs);
+                    remaining -= ParallelIndexer.index(pages, Function.identity(), parser, writer, threads, remaining);
                 }
+            }
 
-            } else if (!warcs.isEmpty()) {
+            if (!warcs.isEmpty()) {
 
                 // Parsing HTML, extraction and filtering run on the workers.
                 try (CommonCrawlSource.Records records = new CommonCrawlSource(warcs, System.out::println).records()) {
 
-                    ParallelIndexer.index(records, CommonCrawlSource::toDocument, parser, writer, threads, maxDocs);
+                    remaining -= ParallelIndexer.index(records, CommonCrawlSource::toDocument, parser, writer, threads, remaining);
                 }
 
                 System.out.println("  " + CommonCrawlSource.filterSummary());
+            }
 
-            } else if (!wikiDumps.isEmpty()) {
+            if (!wikiDumps.isEmpty()) {
 
                 // Cleaning wikitext is the expensive per-page step, so it runs on the workers.
                 try (DumpSequence pages = new DumpSequence(wikiDumps, threads)) {
 
-                    ParallelIndexer.index(pages, WikipediaDumpSource::toDocument, parser, writer, threads, maxDocs);
+                    remaining -= ParallelIndexer.index(pages, WikipediaDumpSource::toDocument, parser, writer, threads, remaining);
                 }
+            }
 
-            } else {
+            if (folder != null || html != null) {
 
                 DocumentSource source = folder != null
                         ? new FolderDocumentSource(folder)
@@ -193,7 +200,7 @@ final class BuildIndexCommand {
 
                 try (Stream<Document> docs = source.stream()) {
 
-                    ParallelIndexer.index(docs.iterator(), Function.identity(), parser, writer, threads, maxDocs);
+                    ParallelIndexer.index(docs.iterator(), Function.identity(), parser, writer, threads, remaining);
                 }
             }
 

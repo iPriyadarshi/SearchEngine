@@ -1,0 +1,109 @@
+# Judged queries for --eval. Format: query<TAB>answer|answer|...
+# An answer is a URL prefix without scheme or "www."; any result starting with
+# one counts as correct. Lines starting with # are ignored.
+#
+# Navigational: the user wants a specific site.
+google	google.com/
+youtube	youtube.com/
+wikipedia	wikipedia.org/|en.wikipedia.org/wiki/main_page|en.wikipedia.org/wiki/wikipedia
+amazon	amazon.com/|amazon.in/|amazon.co.uk/
+reddit	reddit.com/
+github	github.com/
+stack overflow	stackoverflow.com/
+netflix	netflix.com/
+bbc news	bbc.com/news|bbc.co.uk/news
+cnn	cnn.com/|edition.cnn.com/
+new york times	nytimes.com/
+the guardian	theguardian.com/
+imdb	imdb.com/
+spotify	spotify.com/|open.spotify.com/
+paypal	paypal.com/
+ebay	ebay.com/
+walmart	walmart.com/
+microsoft	microsoft.com/
+apple	apple.com/
+python	python.org/
+mozilla firefox	mozilla.org/|firefox.com/
+nasa	nasa.gov/
+world health organization	who.int/
+cdc	cdc.gov/
+yahoo	yahoo.com/
+outlook email	outlook.com/|outlook.live.com/|microsoft.com/en-us/microsoft-365/outlook
+zoom	zoom.us/|zoom.com/
+dropbox	dropbox.com/
+wordpress	wordpress.com/|wordpress.org/
+medium	medium.com/
+quora	quora.com/
+pinterest	pinterest.com/
+whatsapp	whatsapp.com/
+telegram	telegram.org/
+discord	discord.com/
+slack	slack.com/
+notion	notion.so/|notion.com/
+canva	canva.com/
+adobe	adobe.com/
+nvidia	nvidia.com/
+samsung	samsung.com/
+booking.com	booking.com/
+airbnb	airbnb.com/
+tripadvisor	tripadvisor.com/
+espn	espn.com/
+coursera	coursera.org/
+khan academy	khanacademy.org/
+duolingo	duolingo.com/
+w3schools	w3schools.com/
+mdn web docs	developer.mozilla.org/
+npm	npmjs.com/
+docker	docker.com/|docs.docker.com/
+kubernetes	kubernetes.io/
+rust programming language	rust-lang.org/
+go programming language	go.dev/|golang.org/
+openai	openai.com/
+hugging face	huggingface.co/
+weather	weather.com/|accuweather.com/|weather.gov/|metoffice.gov.uk/
+#
+# Informational: the user wants an answer; several sources are acceptable.
+albert einstein	en.wikipedia.org/wiki/albert_einstein|britannica.com/biography/albert-einstein|nobelprize.org/prizes/physics/1921/einstein
+black hole	en.wikipedia.org/wiki/black_hole|nasa.gov/universe/what-are-black-holes|science.nasa.gov/universe/black-holes|britannica.com/science/black-hole
+world war 2	en.wikipedia.org/wiki/world_war_ii|history.com/topics/world-war-ii|britannica.com/event/world-war-ii
+climate change	en.wikipedia.org/wiki/climate_change|science.nasa.gov/climate-change|climate.nasa.gov|un.org/en/climatechange|ipcc.ch
+photosynthesis	en.wikipedia.org/wiki/photosynthesis|britannica.com/science/photosynthesis|khanacademy.org/science/biology/photosynthesis
+theory of evolution	en.wikipedia.org/wiki/evolution|en.wikipedia.org/wiki/natural_selection|britannica.com/science/evolution-scientific-theory
+python tutorial	docs.python.org/3/tutorial|w3schools.com/python|realpython.com|learnpython.org
+javascript array methods	developer.mozilla.org/en-us/docs/web/javascript/reference/global_objects/array|w3schools.com/js/js_array_methods
+linux kernel	kernel.org/|en.wikipedia.org/wiki/linux_kernel
+git tutorial	git-scm.com/docs/gittutorial|git-scm.com/book|atlassian.com/git/tutorials|w3schools.com/git
+symptoms of flu	cdc.gov/flu|mayoclinic.org/diseases-conditions/flu|nhs.uk/conditions/flu|en.wikipedia.org/wiki/influenza|who.int/news-room/fact-sheets/detail/influenza
+diabetes symptoms	mayoclinic.org/diseases-conditions/diabetes|cdc.gov/diabetes|nhs.uk/conditions/diabetes|en.wikipedia.org/wiki/diabetes|who.int/news-room/fact-sheets/detail/diabetes|diabetes.org
+how vaccines work	who.int/news-room/feature-stories/detail/how-do-vaccines-work|cdc.gov/vaccines|en.wikipedia.org/wiki/vaccine
+speed of light	en.wikipedia.org/wiki/speed_of_light|britannica.com/science/speed-of-light
+great wall of china	en.wikipedia.org/wiki/great_wall_of_china|britannica.com/topic/great-wall-of-china|history.com/topics/ancient-china/great-wall-of-china
+roman empire	en.wikipedia.org/wiki/roman_empire|britannica.com/place/roman-empire|history.com/topics/ancient-rome
+french revolution	en.wikipedia.org/wiki/french_revolution|britannica.com/event/french-revolution|history.com/topics/france/french-revolution
+periodic table	en.wikipedia.org/wiki/periodic_table|ptable.com|rsc.org/periodic-table|britannica.com/science/periodic-table
+pythagorean theorem	en.wikipedia.org/wiki/pythagorean_theorem|britannica.com/science/pythagorean-theorem|khanacademy.org/math
+mount everest	en.wikipedia.org/wiki/mount_everest|britannica.com/place/mount-everest
+eiffel tower	en.wikipedia.org/wiki/eiffel_tower|toureiffel.paris|britannica.com/topic/eiffel-tower-paris-france
+william shakespeare	en.wikipedia.org/wiki/william_shakespeare|britannica.com/biography/william-shakespeare|shakespeare.org.uk
+leonardo da vinci	en.wikipedia.org/wiki/leonardo_da_vinci|britannica.com/biography/leonardo-da-vinci
+artificial intelligence	en.wikipedia.org/wiki/artificial_intelligence|britannica.com/technology/artificial-intelligence|ibm.com/think/topics/artificial-intelligence|ibm.com/topics/artificial-intelligence
+machine learning	en.wikipedia.org/wiki/machine_learning|ibm.com/think/topics/machine-learning|ibm.com/topics/machine-learning|coursera.org/learn/machine-learning
+quantum mechanics	en.wikipedia.org/wiki/quantum_mechanics|britannica.com/science/quantum-mechanics-physics
+bitcoin	bitcoin.org/|en.wikipedia.org/wiki/bitcoin|coinmarketcap.com/currencies/bitcoin|coingecko.com/en/coins/bitcoin
+chess rules	en.wikipedia.org/wiki/rules_of_chess|chess.com/learn-how-to-play-chess|fide.com
+olympic games	olympics.com/|en.wikipedia.org/wiki/olympic_games
+dinosaurs	en.wikipedia.org/wiki/dinosaur|nhm.ac.uk/discover/dino-directory|britannica.com/animal/dinosaur|amnh.org/dinosaurs
+solar system	en.wikipedia.org/wiki/solar_system|science.nasa.gov/solar-system|nasa.gov/solar-system|britannica.com/science/solar-system
+human heart	en.wikipedia.org/wiki/heart|britannica.com/science/heart|my.clevelandclinic.org/health/body/21704-heart|nhlbi.nih.gov/health/heart
+democracy	en.wikipedia.org/wiki/democracy|britannica.com/topic/democracy
+buddhism	en.wikipedia.org/wiki/buddhism|britannica.com/topic/buddhism|bbc.co.uk/religion/religions/buddhism
+mozart	en.wikipedia.org/wiki/wolfgang_amadeus_mozart|britannica.com/biography/wolfgang-amadeus-mozart
+the beatles	en.wikipedia.org/wiki/the_beatles|thebeatles.com|britannica.com/topic/the-beatles
+amazon rainforest	en.wikipedia.org/wiki/amazon_rainforest|britannica.com/place/amazon-rainforest|worldwildlife.org/places/amazon
+volcano	en.wikipedia.org/wiki/volcano|britannica.com/science/volcano|usgs.gov/programs/vhp|nationalgeographic.com/environment/article/volcanoes
+earthquake	en.wikipedia.org/wiki/earthquake|usgs.gov|britannica.com/science/earthquake-geology
+dna	en.wikipedia.org/wiki/dna|britannica.com/science/dna|genome.gov/genetics-glossary/deoxyribonucleic-acid
+moon landing	en.wikipedia.org/wiki/apollo_11|en.wikipedia.org/wiki/moon_landing|nasa.gov/mission/apollo-11|britannica.com/topic/apollo-11
+internet history	en.wikipedia.org/wiki/history_of_the_internet|britannica.com/technology/internet|internetsociety.org/internet/history-internet
+how to tie a tie	tie-a-tie.net|en.wikipedia.org/wiki/necktie_knots|wikihow.com/tie-a-tie|realmenrealstyle.com
+celsius to fahrenheit	en.wikipedia.org/wiki/fahrenheit|en.wikipedia.org/wiki/celsius|rapidtables.com/convert/temperature|metric-conversions.org|inchcalculator.com

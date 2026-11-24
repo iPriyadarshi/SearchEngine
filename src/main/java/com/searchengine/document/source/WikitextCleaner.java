@@ -1,5 +1,10 @@
 package com.searchengine.document.source;
 
+import com.searchengine.document.model.Link;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -51,6 +56,8 @@ public final class WikitextCleaner {
 
     private static final Map<String, String> ENTITIES = Map.of(
             "amp", "&", "lt", "<", "gt", ">", "quot", "\"", "apos", "'");
+
+    private static final int MAX_LINKS = 500;
 
     // Bounds the innermost-first link rewriting; real articles nest at most 2-3 deep.
     private static final int MAX_LINK_PASSES = 6;
@@ -159,6 +166,63 @@ public final class WikitextCleaner {
         }
 
         return text;
+    }
+
+    /**
+     * Internal article links in raw wikitext, as {@link Link}s to
+     * {@code urlPrefix + Target_title} with the visible text as anchor.
+     * Namespace (File:, Category:, ...) and interlanguage links are skipped;
+     * section anchors ("Page#Section") link to the page.
+     */
+    public static List<Link> links(String wikitext, String urlPrefix) {
+
+        List<Link> links = new ArrayList<>();
+
+        if (wikitext == null) {
+
+            return links;
+        }
+
+        Set<String> seen = new HashSet<>();
+
+        Matcher m = INNER_LINK.matcher(wikitext);
+
+        while (m.find() && links.size() < MAX_LINKS) {
+
+            String inner = m.group(1);
+
+            int pipe = inner.indexOf('|');
+
+            String target = (pipe >= 0 ? inner.substring(0, pipe) : inner).strip();
+
+            int hash = target.indexOf('#');
+
+            if (hash >= 0) {
+
+                target = target.substring(0, hash).strip();
+            }
+
+            int colon = target.indexOf(':');
+
+            if (target.isEmpty() || colon >= 0) {
+
+                continue;
+            }
+
+            target = target.replace('_', ' ').replaceAll("\\s+", " ");
+
+            // MediaWiki titles always start with a capital letter.
+            String title = Character.toUpperCase(target.charAt(0)) + target.substring(1);
+
+            String url = urlPrefix + title.replace(' ', '_');
+
+            if (seen.add(url)) {
+
+                links.add(new Link(url, linkText(inner)));
+            }
+        }
+
+        return links;
     }
 
     private static String linkText(String inner) {
