@@ -10,6 +10,7 @@ import com.searchengine.query.disk.Similarity;
 import com.searchengine.query.disk.TopDocs;
 import com.searchengine.query.disk.TopKSearcher;
 import com.searchengine.query.parser.BooleanQueryParser;
+import com.searchengine.semantic.SemanticSearcher;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -21,7 +22,8 @@ import java.util.Map;
  * Serves queries from a memory-mapped {@link DiskIndex}. Thread-safe: every
  * query uses its own iterators. The default "bm25" ranking is the two-stage
  * {@link WebRanker} (body, title, URL and anchor fields, then link and site
- * signals); "tfidf" and "cosine" score body text only.
+ * signals), fused with semantic retrieval when the index has embeddings
+ * ({@link HybridRanker}); "tfidf" and "cosine" score body text only.
  */
 public class DiskSearchBackend implements SearchBackend {
 
@@ -42,6 +44,15 @@ public class DiskSearchBackend implements SearchBackend {
     private final WebRanker web;
 
     private final QueryAids aids;
+
+    private final SemanticSearcher semantic;
+
+    private final HybridRanker ranker;
+
+    /**
+     * Weight of semantic ranks in the fusion (see {@link HybridRanker}).
+     */
+    public static final double SEMANTIC_WEIGHT = 0.5;
 
     public DiskSearchBackend(DiskIndex index, Parser parser, Path location) {
 
@@ -77,6 +88,30 @@ public class DiskSearchBackend implements SearchBackend {
         }
 
         this.aids = loaded;
+
+        SemanticSearcher vectors = null;
+
+        try {
+
+            vectors = SemanticSearcher.open(location);
+
+        } catch (java.io.IOException | RuntimeException e) {
+
+            // Semantic search is optional; keyword search still works.
+            System.err.println("Semantic search unavailable: " + e.getMessage());
+        }
+
+        this.semantic = vectors;
+
+        this.ranker = new HybridRanker(web, semantic, SEMANTIC_WEIGHT);
+    }
+
+    /**
+     * Whether this index has embeddings, so "bm25" searches are hybrid.
+     */
+    public boolean semanticEnabled() {
+
+        return semantic != null;
     }
 
     @Override
@@ -159,7 +194,7 @@ public class DiskSearchBackend implements SearchBackend {
 
         // BM25 is the default and uses field + link signals; the others stay plain body
         // scores, useful for comparison.
-        TopDocs top = ranker.equals("bm25") ? web.search(query, limit) : topK.search(analyze(query), similarity, limit);
+        TopDocs top = ranker.equals("bm25") ? this.ranker.search(query, limit) : topK.search(analyze(query), similarity, limit);
 
         Hits hits = toHits(ranker, query, top, start);
 
@@ -172,7 +207,7 @@ public class DiskSearchBackend implements SearchBackend {
 
             long again = System.nanoTime();
 
-            TopDocs retry = ranker.equals("bm25") ? web.search(fixed, limit) : topK.search(analyze(fixed), similarity, limit);
+            TopDocs retry = ranker.equals("bm25") ? this.ranker.search(fixed, limit) : topK.search(analyze(fixed), similarity, limit);
 
             return toHits(ranker, fixed, retry, again);
         });
@@ -232,6 +267,17 @@ public class DiskSearchBackend implements SearchBackend {
 
     @Override
     public void close() {
+
+        if (semantic != null) {
+
+            try {
+
+                semantic.close();
+
+            } catch (java.io.IOException ignored) {
+                // Closing a read-only model; nothing to recover.
+            }
+        }
 
         index.close();
     }

@@ -5,7 +5,9 @@ import com.searchengine.index.disk.StoredDocument;
 import com.searchengine.query.disk.Similarity;
 import com.searchengine.query.disk.TopDocs;
 import com.searchengine.query.disk.TopKSearcher;
+import com.searchengine.search.HybridRanker;
 import com.searchengine.search.WebRanker;
+import com.searchengine.semantic.SemanticSearcher;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -91,7 +93,7 @@ final class EvalCommand {
 
         List<Judged> all = read(queries);
 
-        try (DiskIndex index = DiskIndex.open(dir)) {
+        try (DiskIndex index = DiskIndex.open(dir); SemanticSearcher semantic = SemanticSearcher.open(dir)) {
 
             WebRanker ranker = new WebRanker(index, Main.buildParser(), weights);
 
@@ -128,7 +130,31 @@ final class EvalCommand {
 
             System.out.println("Body BM25 only:   " + evaluate(index, judged, baseline, false));
 
-            System.out.println("Web ranker:       " + evaluate(index, judged, web, verbose));
+            System.out.println("Web ranker:       " + evaluate(index, judged, web, verbose && semantic == null));
+
+            if (semantic != null) {
+
+                for (double w : new double[]{0.25, 0.5, 1.0, 2.0}) {
+
+                    HybridRanker hybrid = new HybridRanker(ranker, semantic, w);
+
+                    boolean show = verbose && w == com.searchengine.search.DiskSearchBackend.SEMANTIC_WEIGHT;
+
+                    System.out.printf("Hybrid (w=%.2f):  %s%n", w, evaluate(index, judged, q -> hybrid.search(q, K), show));
+                }
+
+                System.out.println("Semantic only:    " + evaluate(index, judged, q -> {
+
+                    try {
+
+                        return semantic.search(q, K);
+
+                    } catch (IOException e) {
+
+                        throw new java.io.UncheckedIOException(e);
+                    }
+                }, false));
+            }
 
             if (tune) {
 
