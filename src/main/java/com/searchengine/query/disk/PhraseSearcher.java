@@ -55,7 +55,7 @@ public final class PhraseSearcher {
 
         DocIdIterator matches = DocIdIterators.and(Arrays.asList(slots));
 
-        PriorityQueue<ScoredDoc> heap = new PriorityQueue<>(k + 1, WORST_FIRST);
+        PriorityQueue<ScoredDoc> heap = new PriorityQueue<>(Math.min(k, 1024) + 1, WORST_FIRST);
 
         long total = 0;
 

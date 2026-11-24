@@ -217,6 +217,21 @@ public class DiskSearchParityTest {
 
                 assertEquals(expected.get(i).getDocId(), actual.hits().get(i).docId(), query + " #" + i);
             }
+
+            // Ranked variant: same matches, ordered by score.
+            TopDocs ranked = searcher.searchRanked(parser.parse(query), Integer.MAX_VALUE, Similarity.bm25());
+
+            assertEquals(expected.size(), ranked.totalHits(), query);
+
+            assertEquals(
+                    expected.stream().map(RankedDocument::getDocId).collect(java.util.stream.Collectors.toSet()),
+                    ranked.hits().stream().map(TopDocs.ScoredDoc::docId).collect(java.util.stream.Collectors.toSet()),
+                    query);
+
+            for (int i = 1; i < ranked.hits().size(); i++) {
+
+                assertTrue(ranked.hits().get(i - 1).score() >= ranked.hits().get(i).score(), query);
+            }
         }
     }
 }

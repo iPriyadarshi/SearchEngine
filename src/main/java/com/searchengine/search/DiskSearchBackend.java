@@ -98,7 +98,10 @@ public class DiskSearchBackend implements SearchBackend {
 
         long start = System.nanoTime();
 
-        return toHits("boolean", query, bool.search(new BooleanQueryParser().parse(query), limit), start);
+        // Boolean queries filter; the remaining matches are ordered by BM25 relevance.
+        TopDocs top = bool.searchRanked(new BooleanQueryParser().parse(query), limit, similarities.get("bm25"));
+
+        return toHits("boolean", query, top, start);
     }
 
     private Hits toHits(String mode, String query, TopDocs top, long startNanos) {
