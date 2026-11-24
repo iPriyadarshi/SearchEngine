@@ -19,8 +19,9 @@ import java.util.Map;
 
 /**
  * Serves queries from a memory-mapped {@link DiskIndex}. Thread-safe: every
- * query uses its own iterators. BM25 is the default ranker, since its
- * length normalization matters on real-world corpora.
+ * query uses its own iterators. The default "bm25" ranking is the two-stage
+ * {@link WebRanker} (body, title, URL and anchor fields, then link and site
+ * signals); "tfidf" and "cosine" score body text only.
  */
 public class DiskSearchBackend implements SearchBackend {
 
@@ -37,6 +38,8 @@ public class DiskSearchBackend implements SearchBackend {
     private final PhraseSearcher phrase;
 
     private final BooleanSearcher bool;
+
+    private final WebRanker web;
 
     public DiskSearchBackend(DiskIndex index, Parser parser, Path location) {
 
@@ -57,6 +60,16 @@ public class DiskSearchBackend implements SearchBackend {
         this.phrase = new PhraseSearcher(index);
 
         this.bool = new BooleanSearcher(index, this::analyze);
+
+        this.web = new WebRanker(index, parser, WebRanker.Weights.defaults());
+    }
+
+    /**
+     * The two-stage ranker behind the default "bm25" ranking (exposed for tuning).
+     */
+    public WebRanker webRanker() {
+
+        return web;
     }
 
     private List<String> analyze(String text) {
@@ -82,7 +95,11 @@ public class DiskSearchBackend implements SearchBackend {
 
         long start = System.nanoTime();
 
-        return toHits(ranker, query, topK.search(analyze(query), similarity, limit), start);
+        // BM25 is the default and uses field + link signals; the others stay plain body
+        // scores, useful for comparison.
+        TopDocs top = ranker.equals("bm25") ? web.search(query, limit) : topK.search(analyze(query), similarity, limit);
+
+        return toHits(ranker, query, top, start);
     }
 
     @Override

@@ -210,9 +210,14 @@ public class DiskIndexWriter implements Closeable {
 
         int docId = docLengths.size();
 
-        docLengths.add(tokens.size());
+        // The author's summary (meta description) counts as body text, after the page text.
+        List<String> description = doc.getDescription().isEmpty() ? List.of() : analyze(doc.getDescription());
 
-        totalTokens += tokens.size();
+        int bodyLength = tokens.size() + description.size();
+
+        docLengths.add(bodyLength);
+
+        totalTokens += bodyLength;
 
         storeDocument(doc);
 
@@ -222,18 +227,20 @@ public class DiskIndexWriter implements Closeable {
 
         docPositions.clear();
 
-        addField("", tokens);
+        addField("", tokens, 0);
+
+        addField("", description, tokens.size() + 10);
 
         if (!doc.getTitle().isEmpty()) {
 
-            addField(IndexFiles.TITLE_FIELD, analyze(doc.getTitle()));
+            addField(IndexFiles.TITLE_FIELD, analyze(doc.getTitle()), 0);
         }
 
         String urlWords = urlWords(url);
 
         if (!urlWords.isEmpty()) {
 
-            addField(IndexFiles.URL_FIELD, analyze(urlWords));
+            addField(IndexFiles.URL_FIELD, analyze(urlWords), 0);
         }
 
         bufferPostings(docId);
@@ -255,10 +262,10 @@ public class DiskIndexWriter implements Closeable {
     }
 
     /**
-     * Record a field's tokens for the current document, positions counted
-     * within the field.
+     * Record a field's tokens for the current document, at positions
+     * {@code offset + i} within the field.
      */
-    private void addField(String prefix, List<String> tokens) {
+    private void addField(String prefix, List<String> tokens, int offset) {
 
         for (int position = 0; position < tokens.size(); position++) {
 
@@ -266,7 +273,7 @@ public class DiskIndexWriter implements Closeable {
 
             if (!token.isEmpty() && token.length() <= MAX_TERM_LENGTH) {
 
-                docPositions.computeIfAbsent(prefix + token, k -> new IntList()).add(position);
+                docPositions.computeIfAbsent(prefix + token, k -> new IntList()).add(offset + position);
             }
         }
     }
@@ -402,6 +409,12 @@ public class DiskIndexWriter implements Closeable {
         if (!title.isEmpty() && content.startsWith(title)) {
 
             content = content.substring(title.length());
+        }
+
+        // A meta description is the author's own summary: show it first.
+        if (!doc.getDescription().isEmpty()) {
+
+            content = doc.getDescription() + " " + content;
         }
 
         String flat = content.length() > SNIPPET_CHARS * 4

@@ -15,10 +15,11 @@ import com.searchengine.index.disk.TermInfo;
 public interface Similarity {
 
     /**
-     * @param boost multiplier for a term repeated in the query (the in-memory
-     *              rankers add its contribution once per repetition)
+     * @param boost multiplier: the number of times a term repeats in the query
+     *              (the in-memory rankers add it once per repetition), times
+     *              any field weight
      */
-    TermWeight weight(TermInfo term, int numDocs, double averageDocLength, int boost);
+    TermWeight weight(TermInfo term, int numDocs, double averageDocLength, double boost);
 
     interface TermWeight {
 

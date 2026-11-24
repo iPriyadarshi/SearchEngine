@@ -45,14 +45,16 @@ public final class TopKSearcher {
     }
 
     /**
+     * One scoring clause: an index term (possibly a field term such as
+     * "~python"), how to score it, and a weight.
+     */
+    public record WeightedTerm(String term, Similarity similarity, double boost) {
+    }
+
+    /**
      * @param terms analyzed query terms; repeated terms count once per occurrence
      */
     public TopDocs search(List<String> terms, Similarity similarity, int k) {
-
-        if (k <= 0) {
-
-            return TopDocs.empty();
-        }
 
         Map<String, Integer> counts = new LinkedHashMap<>();
 
@@ -61,16 +63,34 @@ public final class TopKSearcher {
             counts.merge(term, 1, Integer::sum);
         }
 
+        List<WeightedTerm> weighted = new ArrayList<>();
+
+        counts.forEach((term, count) -> weighted.add(new WeightedTerm(term, similarity, count)));
+
+        return search(weighted, k);
+    }
+
+    /**
+     * Top k documents by the sum of the clauses' scores. Clauses for terms
+     * that are not indexed are ignored.
+     */
+    public TopDocs search(List<WeightedTerm> terms, int k) {
+
+        if (k <= 0) {
+
+            return TopDocs.empty();
+        }
+
         List<Clause> clauses = new ArrayList<>();
 
-        for (Map.Entry<String, Integer> entry : counts.entrySet()) {
+        for (WeightedTerm term : terms) {
 
-            TermInfo info = index.termInfo(entry.getKey());
+            TermInfo info = index.termInfo(term.term());
 
-            if (info != null) {
+            if (info != null && term.boost() > 0) {
 
-                Similarity.TermWeight weight = similarity.weight(info, index.numDocs(),
-                        index.averageDocLength(), entry.getValue());
+                Similarity.TermWeight weight = term.similarity().weight(info, index.numDocs(),
+                        index.averageDocLength(), term.boost());
 
                 clauses.add(new Clause(index.postings(info), weight));
             }
