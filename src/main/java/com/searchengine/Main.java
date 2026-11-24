@@ -51,6 +51,13 @@ public class Main {
 
     public static void main(String[] args) throws Exception {
 
+        if (args.length > 0 && args[0].equals("--build-index")) {
+
+            BuildIndexCommand.run(java.util.Arrays.copyOfRange(args, 1, args.length));
+
+            return;
+        }
+
         SearchEngine engine;
 
         // Source-selection flags consume their arguments; anything left over is
@@ -156,7 +163,10 @@ public class Main {
         repl(engine, rankers, phraseExecutor, booleanExecutor);
     }
 
-    private static Parser buildParser() {
+    /**
+     * The default analysis chain, shared by every index this program builds.
+     */
+    public static Parser buildParser() {
 
         Tokenizer tokenizer = new RegexTokenizer();
 
@@ -391,6 +401,10 @@ public class Main {
                   --load <file>     rebuild the index from a saved snapshot
                   --html <folder>   index a folder of .html/.htm files
                   --crawl <url> [n] crawl up to n pages (default 25) from a seed URL
-                  --serve [port]    start the HTTP search API (default port 8080)""");
+                  --serve [port]    start the HTTP search API (default port 8080)
+
+                Build an on-disk index (for corpora larger than memory):
+                  --build-index --out <dir> (--wiki <dump> | --folder <dir> | --html <dir>)
+                                [--max-docs n] [--mem-mb n]""");
     }
 }
