@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>About sift</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Public+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --paper: #fcfcfd;
+            --ink: #1c2230;
+            --muted: #5e6677;
+            --line: #e3e6ec;
+            --link: #2b44b8;
+            --accent: #127a72;
+            --code: #f1f3f6;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                --paper: #15181e;
+                --ink: #e6e8ee;
+                --muted: #9aa2b1;
+                --line: #2a303b;
+                --link: #9db0ff;
+                --accent: #4fc2b6;
+                --code: #232833;
+            }
+        }
+
+        :root[data-theme="dark"] {
+            --paper: #15181e;
+            --ink: #e6e8ee;
+            --muted: #9aa2b1;
+            --line: #2a303b;
+            --link: #9db0ff;
+            --accent: #4fc2b6;
+            --code: #232833;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--paper);
+            color: var(--ink);
+            font-family: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+
+        a {
+            color: var(--link);
+        }
+
+        :focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+        }
+
+        header {
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .wordmark {
+            font-family: "Fraunces", Georgia, serif;
+            font-weight: 600;
+            font-variation-settings: "opsz" 144;
+            font-size: 30px;
+            letter-spacing: -0.03em;
+            color: var(--ink);
+            text-decoration: none;
+            line-height: 1;
+        }
+
+        .wordmark .i {
+            position: relative;
+        }
+
+        .wordmark .i::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 0.19em;
+            width: 0.13em;
+            height: 0.13em;
+            transform: translateX(-50%);
+            background: var(--accent);
+        }
+
+        main {
+            max-width: 680px;
+            padding: 8px 24px 64px;
+        }
+
+        h1 {
+            font-size: 28px;
+            line-height: 1.25;
+            margin: 32px 0 8px;
+        }
+
+        h2 {
+            font-size: 19px;
+            margin: 36px 0 6px;
+        }
+
+        p, li {
+            color: var(--ink);
+        }
+
+        .lede {
+            color: var(--muted);
+            font-size: 18px;
+        }
+
+        code, pre {
+            font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+            font-size: 14px;
+            background: var(--code);
+            border-radius: 4px;
+        }
+
+        code {
+            padding: 1px 5px;
+        }
+
+        pre {
+            padding: 12px 14px;
+            overflow-x: auto;
+        }
+
+        @media (max-width: 600px) {
+            header, main {
+                padding-left: 16px;
+                padding-right: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+<header>
+    <a class="wordmark" href="/" aria-label="sift home">s<span class="i">ı</span>ft</a>
+</header>
+
+<main>
+    <h1>About sift</h1>
+    <p class="lede">sift is an independent web search engine, built from scratch as an open-source project.</p>
+
+    <h2>Privacy</h2>
+    <ul>
+        <li>No accounts, no cookies, no ads and no tracking.</li>
+        <li>Searches are not logged or stored, and are not linked to you.</li>
+        <li>When you open a result, the site you visit is not told what you searched for.</li>
+        <li>Your theme choice is the only thing kept, in your own browser.</li>
+    </ul>
+
+    <h2>Where results come from</h2>
+    <p>
+        Results come from public web pages: sites visited by our crawler, pages from the
+        <a href="https://commoncrawl.org/" rel="noreferrer">Common Crawl</a> open archive, and Wikipedia.
+        Pages are ranked by how well their text, title and address match your search, how other pages
+        link to them, and how widely used their site is. Nobody can pay to be ranked higher.
+    </p>
+
+    <h2>For site owners</h2>
+    <p>
+        Our crawler identifies itself as
+        <code>siftbot/1.0 (+https://github.com/iPriyadarshi/SearchEngine)</code>.
+        It follows <code>robots.txt</code>, makes at most one request per second to a site (slower if you set
+        <code>Crawl-delay</code>), and reads only a limited number of pages per site. To keep it out of your site:
+    </p>
+    <pre>User-agent: siftbot
+Disallow: /</pre>
+    <p>
+        Pages marked <code>noindex</code> are never indexed. To have a page removed or to report a problem,
+        <a href="https://github.com/iPriyadarshi/SearchEngine/issues" rel="noreferrer">open an issue</a>
+        with the page address.
+    </p>
+
+    <h2>Search tips</h2>
+    <ul>
+        <li>Put words in quotes to find an exact phrase: <code>"black hole"</code></li>
+        <li>Combine words with capitalised <code>AND</code>, <code>OR</code>, <code>NOT</code>: <code>jazz AND NOT rock</code></li>
+        <li>Press <code>/</code> to jump to the search box.</li>
+    </ul>
+</main>
+<script>
+    try {
+        const theme = localStorage.getItem("sift-theme");
+        if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+    } catch (e) { /* storage unavailable */ }
+</script>
+</body>
+</html>

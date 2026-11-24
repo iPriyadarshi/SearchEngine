@@ -313,6 +313,22 @@
             cursor: pointer;
         }
 
+        .home-about {
+            margin-top: auto;
+            padding: 24px 0 20px;
+            font-size: 13px;
+        }
+
+        .home-about a {
+            color: var(--muted);
+            text-decoration: none;
+        }
+
+        .home-about a:hover,
+        .home-about a:focus-visible {
+            text-decoration: underline;
+        }
+
         .home-actions button:hover {
             border-color: var(--field-line);
             box-shadow: var(--shadow);
@@ -585,6 +601,7 @@
         <button type="button" id="home-submit">Search</button>
         <button type="button" id="home-lucky">Try a random topic</button>
     </div>
+    <p class="home-about"><a href="/about">About &amp; privacy</a></p>
 </div>
 
 <!-- Results -->
@@ -963,7 +980,7 @@
         if (isUrl) {
             const link = document.createElement("a");
             link.href = path;
-            link.rel = "noopener";
+            link.rel = "noopener noreferrer";
             link.textContent = title;
             heading.appendChild(link);
         } else {

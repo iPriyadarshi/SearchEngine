@@ -194,7 +194,15 @@ public class Main {
 
     private static void serve(SearchBackend backend, int port) throws Exception {
 
-        SearchHttpServer httpServer = new SearchHttpServer(port, backend);
+        // Public deployments set these (see DEPLOY.md); defaults suit local use.
+        SearchHttpServer.Options defaults = SearchHttpServer.Options.defaults();
+
+        SearchHttpServer.Options options = new SearchHttpServer.Options(
+                envDouble("RATE_LIMIT", defaults.requestsPerSecond()),
+                envDouble("RATE_BURST", defaults.burst()),
+                "true".equalsIgnoreCase(System.getenv("TRUST_PROXY")));
+
+        SearchHttpServer httpServer = new SearchHttpServer(port, backend, options);
 
         httpServer.start();
 
@@ -211,6 +219,20 @@ public class Main {
         System.out.println("API: /search?q=..., /phrase?q=..., /bool?q=..., /health");
 
         Thread.currentThread().join();
+    }
+
+    private static double envDouble(String name, double fallback) {
+
+        String value = System.getenv(name);
+
+        try {
+
+            return value == null ? fallback : Double.parseDouble(value);
+
+        } catch (NumberFormatException e) {
+
+            return fallback;
+        }
     }
 
     private static MemorySearchBackend memoryBackend(SearchEngine engine, String source) {

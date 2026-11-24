@@ -35,6 +35,7 @@ import java.util.concurrent.Executors;
  * GET /phrase?q=...&amp;limit=N&amp;offset=M                            phrase search
  * GET /bool?q=... AND ...&amp;limit=N&amp;offset=M                      boolean search
  * GET /suggest?q=...                                    autocomplete (JSON array)
+ * GET /about                                             about, privacy and crawler information
  * GET /health                                            liveness probe
  * </pre>
  *
@@ -57,21 +58,57 @@ public class SearchHttpServer {
 
     private final ExecutorService executor;
 
+    /**
+     * Settings for running on the public internet.
+     *
+     * @param requestsPerSecond sustained requests per second allowed per client
+     * @param burst             requests a client may make at once
+     * @param trustProxy        take the client address from X-Forwarded-For; only
+     *                          safe behind a reverse proxy that sets it
+     */
+    public record Options(double requestsPerSecond, double burst, boolean trustProxy) {
+
+        public static Options defaults() {
+
+            return new Options(5, 30, false);
+        }
+    }
+
+    // Autocomplete fires on keystrokes, so it costs a fraction of a search.
+    private static final double SUGGEST_COST = 0.25;
+
+    private static final String CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+            + "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; "
+            + "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+
+    private final RateLimiter limiter;
+
+    private final boolean trustProxy;
+
     public SearchHttpServer(int port, SearchBackend backend) throws IOException {
+
+        this(port, backend, Options.defaults());
+    }
+
+    public SearchHttpServer(int port, SearchBackend backend, Options options) throws IOException {
 
         this.backend = backend;
 
+        this.limiter = new RateLimiter(options.requestsPerSecond(), options.burst());
+
+        this.trustProxy = options.trustProxy();
+
         this.server = HttpServer.create(new InetSocketAddress(port), 0);
 
-        server.createContext("/search", guarded(this::handleSearch));
+        server.createContext("/search", guarded(limited(this::handleSearch, 1)));
 
-        server.createContext("/phrase", guarded(this::handlePhrase));
+        server.createContext("/phrase", guarded(limited(this::handlePhrase, 1)));
 
-        server.createContext("/bool", guarded(this::handleBool));
+        server.createContext("/bool", guarded(limited(this::handleBool, 1)));
 
         server.createContext("/health", guarded(this::handleHealth));
 
-        server.createContext("/suggest", guarded(this::handleSuggest));
+        server.createContext("/suggest", guarded(limited(this::handleSuggest, SUGGEST_COST)));
 
         // Fallback context: serves the web UI at "/" and 404s everything else.
         server.createContext("/", guarded(this::handleRoot));
@@ -148,6 +185,46 @@ public class SearchHttpServer {
         };
     }
 
+    /**
+     * Answers 429 with Retry-After when the client is over its rate.
+     */
+    private HttpHandler limited(HttpHandler handler, double cost) {
+
+        return exchange -> {
+
+            long wait = limiter.acquire(clientAddress(exchange), cost);
+
+            if (wait > 0) {
+
+                exchange.getResponseHeaders().add("Retry-After", String.valueOf(wait));
+
+                respond(exchange, 429, error("too many requests; retry in " + wait + "s"));
+
+                return;
+            }
+
+            handler.handle(exchange);
+        };
+    }
+
+    private String clientAddress(HttpExchange exchange) {
+
+        if (trustProxy) {
+
+            String forwarded = exchange.getRequestHeaders().getFirst("X-Forwarded-For");
+
+            if (forwarded != null && !forwarded.isBlank()) {
+
+                // The proxy appends the address it saw last.
+                String[] hops = forwarded.split(",");
+
+                return hops[hops.length - 1].strip();
+            }
+        }
+
+        return exchange.getRemoteAddress().getAddress().getHostAddress();
+    }
+
     private void handleHealth(HttpExchange exchange) throws IOException {
 
         respond(exchange, 200, "{\"status\":\"ok\",\"documents\":" + backend.documentCount() + "}");
@@ -174,18 +251,37 @@ public class SearchHttpServer {
 
         String path = exchange.getRequestURI().getPath();
 
-        if (path.equals("/") || path.equals("/index.html") || path.equals("/ui")) {
+        String page = switch (path) {
 
-            byte[] ui = readResource("/web/index.html");
+            case "/", "/index.html", "/ui" -> "/web/index.html";
 
-            if (ui == null) {
+            case "/about" -> "/web/about.html";
 
-                respond(exchange, 500, error("web UI resource not found"));
+            default -> null;
+        };
+
+        if (page != null) {
+
+            byte[] html = readResource(page);
+
+            if (html == null) {
+
+                respond(exchange, 500, error("page resource not found"));
 
                 return;
             }
 
-            respondBytes(exchange, 200, "text/html; charset=utf-8", ui);
+            respondBytes(exchange, 200, "text/html; charset=utf-8", html);
+
+            return;
+        }
+
+        if (path.equals("/robots.txt")) {
+
+            // Result pages are search output: keep other crawlers off them.
+            respondBytes(exchange, 200, "text/plain; charset=utf-8",
+                    "User-agent: *\nDisallow: /search\nDisallow: /phrase\nDisallow: /bool\nDisallow: /suggest\nDisallow: /?\n"
+                            .getBytes(StandardCharsets.UTF_8));
 
             return;
         }
@@ -379,7 +475,46 @@ public class SearchHttpServer {
     private void respondBytes(HttpExchange exchange, int status, String contentType, byte[] bytes)
             throws IOException {
 
-        exchange.getResponseHeaders().add("Content-Type", contentType);
+        var headers = exchange.getResponseHeaders();
+
+        headers.add("Content-Type", contentType);
+
+        headers.add("X-Content-Type-Options", "nosniff");
+
+        // Clicking a result must not tell the destination what was searched.
+        headers.add("Referrer-Policy", "no-referrer");
+
+        if (contentType.startsWith("text/html")) {
+
+            headers.add("Content-Security-Policy", CSP);
+
+            headers.add("X-Frame-Options", "DENY");
+
+            headers.add("Cache-Control", "no-cache");
+
+        } else {
+
+            // Queries are private; no shared cache should keep them.
+            headers.add("Cache-Control", "no-store");
+        }
+
+        String accept = exchange.getRequestHeaders().getFirst("Accept-Encoding");
+
+        if (accept != null && accept.contains("gzip") && bytes.length > 1024) {
+
+            java.io.ByteArrayOutputStream compressed = new java.io.ByteArrayOutputStream(bytes.length / 3);
+
+            try (java.util.zip.GZIPOutputStream gz = new java.util.zip.GZIPOutputStream(compressed)) {
+
+                gz.write(bytes);
+            }
+
+            bytes = compressed.toByteArray();
+
+            headers.add("Content-Encoding", "gzip");
+
+            headers.add("Vary", "Accept-Encoding");
+        }
 
         exchange.sendResponseHeaders(status, bytes.length);
 
