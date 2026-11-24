@@ -1,16 +1,15 @@
 package com.searchengine.http;
 
 import com.searchengine.api.Ranker;
-import com.searchengine.document.model.Document;
-import com.searchengine.engine.ResultFormatter;
 import com.searchengine.engine.SearchEngine;
 import com.searchengine.query.executor.BooleanQueryExecutor;
 import com.searchengine.query.executor.PhraseQueryExecutor;
-import com.searchengine.query.model.PhraseQuery;
-import com.searchengine.query.parser.BooleanQueryParser;
-import com.searchengine.query.result.RankedDocument;
-import com.searchengine.query.result.SearchResult;
+import com.searchengine.search.MemorySearchBackend;
+import com.searchengine.search.SearchBackend;
+import com.searchengine.search.SearchBackend.Hit;
+import com.searchengine.search.SearchBackend.Hits;
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
 import java.io.IOException;
@@ -20,65 +19,70 @@ import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
-import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
- * Exposes the search engine over HTTP using the JDK's built-in server (no web
- * framework dependency).
+ * Exposes a {@link SearchBackend} over HTTP using the JDK's built-in server
+ * (no web framework dependency).
  *
  * <pre>
  * GET /                                                  responsive web UI
- * GET /search?q=...&amp;ranker=tfidf|cosine|bm25&amp;limit=N   ranked search
+ * GET /search?q=...&amp;ranker=bm25|tfidf|cosine&amp;limit=N   ranked search
  * GET /phrase?q=...&amp;limit=N                             phrase search
- * GET /bool?q=... AND ...                                boolean search
+ * GET /bool?q=... AND ...&amp;limit=N                       boolean search
  * GET /health                                            liveness probe
  * </pre>
  *
  * The search endpoints return JSON; the root serves the single-page UI.
+ * Requests are handled on a thread pool, so slow queries do not block others.
  */
 public class SearchHttpServer {
 
     private static final int DEFAULT_LIMIT = 10;
 
+    static final int MAX_LIMIT = 100;
+
     private final HttpServer server;
 
-    private final SearchEngine engine;
+    private final SearchBackend backend;
 
-    private final Map<String, Ranker> rankers;
+    private final ExecutorService executor;
 
-    private final PhraseQueryExecutor phraseExecutor;
+    public SearchHttpServer(int port, SearchBackend backend) throws IOException {
 
-    private final BooleanQueryExecutor booleanExecutor;
+        this.backend = backend;
 
+        this.server = HttpServer.create(new InetSocketAddress(port), 0);
+
+        server.createContext("/search", guarded(this::handleSearch));
+
+        server.createContext("/phrase", guarded(this::handlePhrase));
+
+        server.createContext("/bool", guarded(this::handleBool));
+
+        server.createContext("/health", guarded(this::handleHealth));
+
+        // Fallback context: serves the web UI at "/" and 404s everything else.
+        server.createContext("/", guarded(this::handleRoot));
+
+        this.executor = Executors.newFixedThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors() * 2));
+
+        server.setExecutor(executor);
+    }
+
+    /**
+     * Convenience constructor for the in-memory engine.
+     */
     public SearchHttpServer(int port,
                             SearchEngine engine,
                             Map<String, Ranker> rankers,
                             PhraseQueryExecutor phraseExecutor,
                             BooleanQueryExecutor booleanExecutor) throws IOException {
 
-        this.engine = engine;
-
-        this.rankers = rankers;
-
-        this.phraseExecutor = phraseExecutor;
-
-        this.booleanExecutor = booleanExecutor;
-
-        this.server = HttpServer.create(new InetSocketAddress(port), 0);
-
-        server.createContext("/search", this::handleSearch);
-
-        server.createContext("/phrase", this::handlePhrase);
-
-        server.createContext("/bool", this::handleBool);
-
-        server.createContext("/health", this::handleHealth);
-
-        // Fallback context: serves the web UI at "/" and 404s everything else.
-        server.createContext("/", this::handleRoot);
-
-        server.setExecutor(null);
+        this(port, new MemorySearchBackend(engine, rankers, phraseExecutor, booleanExecutor, "documents"));
     }
 
     public void start() {
@@ -86,9 +90,20 @@ public class SearchHttpServer {
         server.start();
     }
 
+    /**
+     * Stop accepting requests, give in-flight ones up to {@code graceSeconds}
+     * to finish, then release the worker threads.
+     */
+    public void stop(int graceSeconds) {
+
+        server.stop(graceSeconds);
+
+        executor.shutdownNow();
+    }
+
     public void stop() {
 
-        server.stop(0);
+        stop(0);
     }
 
     public int getPort() {
@@ -96,9 +111,38 @@ public class SearchHttpServer {
         return server.getAddress().getPort();
     }
 
+    /**
+     * Turns any unexpected failure into a JSON 500 instead of a dropped
+     * connection.
+     */
+    private HttpHandler guarded(HttpHandler handler) {
+
+        // Not try-with-resources: that would close the exchange before the
+        // catch blocks get to send their error response.
+        return exchange -> {
+
+            try {
+
+                handler.handle(exchange);
+
+            } catch (IllegalArgumentException e) {
+
+                respond(exchange, 400, error(e.getMessage()));
+
+            } catch (RuntimeException e) {
+
+                respond(exchange, 500, error("internal error"));
+
+            } finally {
+
+                exchange.close();
+            }
+        };
+    }
+
     private void handleHealth(HttpExchange exchange) throws IOException {
 
-        respond(exchange, 200, "{\"status\":\"ok\",\"documents\":" + engine.getDocumentCount() + "}");
+        respond(exchange, 200, "{\"status\":\"ok\",\"documents\":" + backend.documentCount() + "}");
     }
 
     private void handleRoot(HttpExchange exchange) throws IOException {
@@ -138,20 +182,9 @@ public class SearchHttpServer {
 
         String q = params.getOrDefault("q", "");
 
-        String rankerName = params.getOrDefault("ranker", "tfidf");
+        String ranker = params.getOrDefault("ranker", backend.defaultRanker()).toLowerCase(Locale.ROOT);
 
-        Ranker ranker = rankers.get(rankerName);
-
-        if (ranker == null) {
-
-            respond(exchange, 400, error("unknown ranker: " + rankerName));
-
-            return;
-        }
-
-        SearchResult result = engine.search(q, ranker);
-
-        respond(exchange, 200, toJson(q, rankerName, result, limit(params)));
+        respond(exchange, 200, toJson(q, backend.search(q, ranker, limit(params))));
     }
 
     private void handlePhrase(HttpExchange exchange) throws IOException {
@@ -160,11 +193,7 @@ public class SearchHttpServer {
 
         String q = params.getOrDefault("q", "");
 
-        List<String> terms = engine.analyzeQuery(q);
-
-        SearchResult result = phraseExecutor.execute(new PhraseQuery(terms));
-
-        respond(exchange, 200, toJson(q, "phrase", result, limit(params)));
+        respond(exchange, 200, toJson(q, backend.phrase(q, limit(params))));
     }
 
     private void handleBool(HttpExchange exchange) throws IOException {
@@ -173,23 +202,16 @@ public class SearchHttpServer {
 
         String q = params.getOrDefault("q", "");
 
-        try {
-
-            SearchResult result = booleanExecutor.execute(new BooleanQueryParser().parse(q));
-
-            respond(exchange, 200, toJson(q, "boolean", result, limit(params)));
-
-        } catch (IllegalArgumentException e) {
-
-            respond(exchange, 400, error(e.getMessage()));
-        }
+        respond(exchange, 200, toJson(q, backend.bool(q, limit(params))));
     }
 
     private int limit(Map<String, String> params) {
 
         try {
 
-            return Math.max(1, Integer.parseInt(params.getOrDefault("limit", String.valueOf(DEFAULT_LIMIT))));
+            int requested = Integer.parseInt(params.getOrDefault("limit", String.valueOf(DEFAULT_LIMIT)));
+
+            return Math.clamp(requested, 1, MAX_LIMIT);
 
         } catch (NumberFormatException e) {
 
@@ -197,41 +219,39 @@ public class SearchHttpServer {
         }
     }
 
-    private String toJson(String query, String mode, SearchResult result, int limit) {
-
-        List<RankedDocument> docs = result.getResults();
-
-        int count = Math.min(limit, docs.size());
+    private String toJson(String query, Hits result) {
 
         StringBuilder sb = new StringBuilder();
 
         sb.append("{\"query\":\"").append(Json.escape(query)).append("\",");
 
-        sb.append("\"mode\":\"").append(Json.escape(mode)).append("\",");
+        sb.append("\"mode\":\"").append(Json.escape(result.mode())).append("\",");
 
-        sb.append("\"count\":").append(count).append(",");
+        sb.append("\"count\":").append(result.hits().size()).append(",");
+
+        if (result.total() >= 0) {
+
+            sb.append("\"total\":").append(result.total()).append(",");
+        }
+
+        sb.append("\"tookMs\":").append(String.format(Locale.ROOT, "%.2f", result.tookMillis())).append(",");
 
         sb.append("\"results\":[");
 
-        for (int i = 0; i < count; i++) {
+        for (int i = 0; i < result.hits().size(); i++) {
 
-            RankedDocument doc = docs.get(i);
-
-            Document source = engine.getDocument(doc.getDocId());
-
-            String path = source != null ? source.getPath() : "";
-
-            String snippet = source != null ? ResultFormatter.snippet(source.getContent()) : "";
+            Hit hit = result.hits().get(i);
 
             if (i > 0) {
 
                 sb.append(",");
             }
 
-            sb.append("{\"docId\":").append(doc.getDocId())
-                    .append(",\"score\":").append(doc.getScore())
-                    .append(",\"path\":\"").append(Json.escape(path)).append("\"")
-                    .append(",\"snippet\":\"").append(Json.escape(snippet)).append("\"}");
+            sb.append("{\"docId\":").append(hit.docId())
+                    .append(",\"score\":").append(hit.score())
+                    .append(",\"title\":\"").append(Json.escape(hit.title())).append("\"")
+                    .append(",\"path\":\"").append(Json.escape(hit.path())).append("\"")
+                    .append(",\"snippet\":\"").append(Json.escape(hit.snippet())).append("\"}");
         }
 
         sb.append("]}");

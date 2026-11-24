@@ -171,6 +171,15 @@
             word-break: break-all;
         }
 
+        a.result-path {
+            text-decoration: none;
+        }
+
+        a.result-path:hover,
+        a.result-path:focus-visible {
+            text-decoration: underline;
+        }
+
         .result-score {
             font-size: 0.78rem;
             color: var(--muted);
@@ -227,8 +236,8 @@
             <div class="field" id="ranker-field">
                 <label for="ranker">Ranker</label>
                 <select id="ranker">
-                    <option value="tfidf">TF-IDF</option>
                     <option value="bm25">BM25</option>
+                    <option value="tfidf">TF-IDF</option>
                     <option value="cosine">Cosine</option>
                 </select>
             </div>
@@ -309,14 +318,23 @@
             statusEl.textContent = "No matching documents.";
             return;
         }
-        statusEl.textContent = results.length + " result" + (results.length === 1 ? "" : "s")
-            + " · " + (data.mode || "");
+        const total = typeof data.total === "number"
+            ? " of " + data.total.toLocaleString()
+            : "";
+        const took = typeof data.tookMs === "number" ? " · " + data.tookMs.toFixed(1) + " ms" : "";
+        statusEl.textContent = results.length + total + " result" + (results.length === 1 && !total ? "" : "s")
+            + " · " + (data.mode || "") + took;
         for (const r of results) {
             const li = document.createElement("li");
             li.className = "result";
+            const isUrl = /^https?:\/\//.test(r.path || "");
+            const label = escapeHtml(r.title || r.path || ("doc " + r.docId));
+            const heading = isUrl
+                ? '<a class="result-path" href="' + escapeHtml(r.path) + '" target="_blank" rel="noopener">' + label + "</a>"
+                : '<span class="result-path">' + label + "</span>";
             li.innerHTML =
                 '<div class="result-head">' +
-                '<span class="result-path">' + escapeHtml(r.path || ("doc " + r.docId)) + "</span>" +
+                heading +
                 '<span class="result-score">score ' + (Number(r.score).toFixed(4)) + "</span>" +
                 "</div>" +
                 (r.snippet ? '<div class="result-snippet">' + escapeHtml(r.snippet) + "</div>" : "");

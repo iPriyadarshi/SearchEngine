@@ -1,19 +1,19 @@
 package com.searchengine;
 
+import com.searchengine.api.DocumentSource;
 import com.searchengine.api.Index;
 import com.searchengine.api.Parser;
 import com.searchengine.api.Ranker;
 import com.searchengine.api.TokenFilter;
 import com.searchengine.api.Tokenizer;
-import com.searchengine.api.DocumentSource;
 import com.searchengine.crawler.JsoupPageFetcher;
 import com.searchengine.crawler.WebCrawler;
 import com.searchengine.document.source.FolderDocumentSource;
 import com.searchengine.document.source.HtmlDocumentSource;
-import com.searchengine.engine.ResultFormatter;
 import com.searchengine.engine.SearchEngine;
 import com.searchengine.http.SearchHttpServer;
 import com.searchengine.index.core.PositionalInvertedIndex;
+import com.searchengine.index.disk.DiskIndex;
 import com.searchengine.parser.core.DefaultParser;
 import com.searchengine.parser.filter.LengthFilter;
 import com.searchengine.parser.filter.LowercaseFilter;
@@ -22,16 +22,20 @@ import com.searchengine.parser.filter.StopwordFilter;
 import com.searchengine.parser.tokenizer.RegexTokenizer;
 import com.searchengine.query.executor.BooleanQueryExecutor;
 import com.searchengine.query.executor.PhraseQueryExecutor;
-import com.searchengine.query.model.PhraseQuery;
-import com.searchengine.query.parser.BooleanQueryParser;
-import com.searchengine.query.result.SearchResult;
 import com.searchengine.ranking.core.BM25Ranker;
 import com.searchengine.ranking.core.CosineSimilarityRanker;
 import com.searchengine.ranking.core.TFIDFRanker;
+import com.searchengine.search.DiskSearchBackend;
+import com.searchengine.search.MemorySearchBackend;
+import com.searchengine.search.SearchBackend;
+import com.searchengine.search.SearchBackend.Hit;
+import com.searchengine.search.SearchBackend.Hits;
 import com.searchengine.storage.IndexStore;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,36 +53,42 @@ public class Main {
 
     private static final String DEFAULT_FOLDER = "data/raw";
 
+    private static final int DEFAULT_PORT = 8080;
+
+    private static final int DEFAULT_LIMIT = 10;
+
     public static void main(String[] args) throws Exception {
 
         if (args.length > 0 && args[0].equals("--build-index")) {
 
-            BuildIndexCommand.run(java.util.Arrays.copyOfRange(args, 1, args.length));
+            BuildIndexCommand.run(Arrays.copyOfRange(args, 1, args.length));
 
             return;
         }
 
-        SearchEngine engine;
+        SearchBackend backend;
 
         // Source-selection flags consume their arguments; anything left over is
         // treated as a one-shot query.
-        if (args.length >= 2 && args[0].equals("--load")) {
+        if (args.length >= 2 && args[0].equals("--index")) {
 
-            engine = loadEngine(args[1]);
+            Path dir = Path.of(args[1]);
 
-            System.out.println("Loaded " + engine.getDocumentCount()
-                    + " documents from index " + args[1] + ".");
+            backend = new DiskSearchBackend(DiskIndex.open(dir), buildParser(), dir);
 
-            args = java.util.Arrays.copyOfRange(args, 2, args.length);
+            args = Arrays.copyOfRange(args, 2, args.length);
+
+        } else if (args.length >= 2 && args[0].equals("--load")) {
+
+            backend = memoryBackend(loadEngine(args[1]), "snapshot " + args[1]);
+
+            args = Arrays.copyOfRange(args, 2, args.length);
 
         } else if (args.length >= 2 && args[0].equals("--html")) {
 
-            engine = buildEngineFrom(new HtmlDocumentSource(args[1]));
+            backend = memoryBackend(buildEngineFrom(new HtmlDocumentSource(args[1])), args[1]);
 
-            System.out.println("Indexed " + engine.getDocumentCount()
-                    + " HTML documents from " + args[1] + ".");
-
-            args = java.util.Arrays.copyOfRange(args, 2, args.length);
+            args = Arrays.copyOfRange(args, 2, args.length);
 
         } else if (args.length >= 2 && args[0].equals("--crawl")) {
 
@@ -93,74 +103,35 @@ public class Main {
                 consumed = 3;
             }
 
-            engine = crawlEngine(args[1], maxPages);
+            backend = memoryBackend(crawlEngine(args[1], maxPages), "crawl of " + args[1]);
 
-            System.out.println("Crawled and indexed " + engine.getDocumentCount()
-                    + " pages from " + args[1] + ".");
-
-            args = java.util.Arrays.copyOfRange(args, consumed, args.length);
+            args = Arrays.copyOfRange(args, consumed, args.length);
 
         } else {
 
-            engine = buildEngine(DEFAULT_FOLDER);
-
-            System.out.println("Indexed " + engine.getDocumentCount()
-                    + " documents from " + DEFAULT_FOLDER + ".");
+            backend = memoryBackend(buildEngineFrom(new FolderDocumentSource(DEFAULT_FOLDER)), DEFAULT_FOLDER);
         }
 
-        PositionalInvertedIndex index = (PositionalInvertedIndex) engine.getIndex();
+        System.out.println("Searching " + backend.describe() + ".");
 
-        Map<String, Ranker> rankers = buildRankers(index);
+        try (backend) {
 
-        PhraseQueryExecutor phraseExecutor = new PhraseQueryExecutor(index);
+            if (args.length > 0 && args[0].equals("--serve")) {
 
-        BooleanQueryExecutor booleanExecutor =
-                new BooleanQueryExecutor(index, index, engine::analyzeQuery);
-
-        if (args.length > 0 && args[0].equals("--serve")) {
-
-            int port = args.length >= 2 && args[1].matches("\\d+") ? Integer.parseInt(args[1]) : 8080;
-
-            SearchHttpServer httpServer =
-                    new SearchHttpServer(port, engine, rankers, phraseExecutor, booleanExecutor);
-
-            httpServer.start();
-
-            System.out.println("Web UI + API at http://localhost:" + httpServer.getPort() + "/");
-
-            System.out.println("API: /search?q=..., /phrase?q=..., /bool?q=..., /health");
-
-            Thread.currentThread().join();
-
-            return;
-        }
-
-        if (args.length > 0) {
-
-            if (args[0].equals("--bool")) {
-
-                String expr = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length));
-
-                runBoolean(engine, booleanExecutor, expr);
+                serve(backend, args.length >= 2 && args[1].matches("\\d+") ? Integer.parseInt(args[1]) : defaultPort());
 
                 return;
             }
 
-            String query = String.join(" ", args);
+            if (args.length > 0) {
 
-            if (isPhrase(query)) {
+                runOnce(backend, args);
 
-                runPhrase(engine, phraseExecutor, query);
-
-            } else {
-
-                runOnce(engine, rankers.get("tfidf"), query);
+                return;
             }
 
-            return;
+            repl(backend);
         }
-
-        repl(engine, rankers, phraseExecutor, booleanExecutor);
     }
 
     /**
@@ -179,9 +150,40 @@ public class Main {
         return new DefaultParser(tokenizer, filters);
     }
 
-    private static SearchEngine buildEngine(String folderPath) throws Exception {
+    private static int defaultPort() {
 
-        return buildEngineFrom(new FolderDocumentSource(folderPath));
+        String port = System.getenv("PORT");
+
+        return port != null && port.matches("\\d+") ? Integer.parseInt(port) : DEFAULT_PORT;
+    }
+
+    private static void serve(SearchBackend backend, int port) throws Exception {
+
+        SearchHttpServer httpServer = new SearchHttpServer(port, backend);
+
+        httpServer.start();
+
+        // Let in-flight requests finish on Ctrl+C / SIGTERM before the index is unmapped.
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+
+            httpServer.stop(2);
+
+            backend.close();
+        }));
+
+        System.out.println("Web UI + API at http://localhost:" + httpServer.getPort() + "/");
+
+        System.out.println("API: /search?q=..., /phrase?q=..., /bool?q=..., /health");
+
+        Thread.currentThread().join();
+    }
+
+    private static MemorySearchBackend memoryBackend(SearchEngine engine, String source) {
+
+        PositionalInvertedIndex index = (PositionalInvertedIndex) engine.getIndex();
+
+        return new MemorySearchBackend(engine, buildRankers(index), new PhraseQueryExecutor(index),
+                new BooleanQueryExecutor(index, index, engine::analyzeQuery), source);
     }
 
     private static SearchEngine buildEngineFrom(DocumentSource source) throws Exception {
@@ -208,7 +210,7 @@ public class Main {
 
         SearchEngine engine = new SearchEngine(buildParser(), new PositionalInvertedIndex());
 
-        new IndexStore().load(engine, java.nio.file.Path.of(indexFile));
+        new IndexStore().load(engine, Path.of(indexFile));
 
         return engine;
     }
@@ -226,34 +228,72 @@ public class Main {
         return rankers;
     }
 
-    private static void runOnce(SearchEngine engine, Ranker ranker, String query) {
+    private static void runOnce(SearchBackend backend, String[] args) {
 
-        SearchResult result = engine.search(query, ranker);
+        if (args[0].equals("--bool")) {
 
-        System.out.println(new ResultFormatter(engine).format(result));
+            runBoolean(backend, String.join(" ", Arrays.copyOfRange(args, 1, args.length)), DEFAULT_LIMIT);
+
+            return;
+        }
+
+        String query = String.join(" ", args);
+
+        if (isPhrase(query)) {
+
+            print(backend.phrase(stripQuotes(query), DEFAULT_LIMIT));
+
+        } else {
+
+            print(backend.search(query, backend.defaultRanker(), DEFAULT_LIMIT));
+        }
     }
 
-    private static void runPhrase(SearchEngine engine, PhraseQueryExecutor executor, String quoted) {
-
-        List<String> terms = engine.analyzeQuery(stripQuotes(quoted));
-
-        SearchResult result = executor.execute(new PhraseQuery(terms));
-
-        System.out.println(new ResultFormatter(engine).format(result));
-    }
-
-    private static void runBoolean(SearchEngine engine, BooleanQueryExecutor executor, String expr) {
+    private static void runBoolean(SearchBackend backend, String expr, int limit) {
 
         try {
 
-            SearchResult result = executor.execute(new BooleanQueryParser().parse(expr));
-
-            System.out.println(new ResultFormatter(engine).format(result));
+            print(backend.bool(expr, limit));
 
         } catch (IllegalArgumentException e) {
 
             System.out.println("Invalid boolean query: " + e.getMessage());
         }
+    }
+
+    static String format(Hits result) {
+
+        if (result.hits().isEmpty()) {
+
+            return "No matching documents.";
+        }
+
+        StringBuilder sb = new StringBuilder();
+
+        int rank = 1;
+
+        for (Hit hit : result.hits()) {
+
+            String label = hit.title().isEmpty() ? hit.path() : hit.title() + "  " + hit.path();
+
+            sb.append(String.format("%2d. doc=%d  score=%.4f  %s%n", rank++, hit.docId(), hit.score(), label));
+
+            if (!hit.snippet().isEmpty()) {
+
+                sb.append("    ").append(hit.snippet()).append(System.lineSeparator());
+            }
+        }
+
+        String total = result.total() >= 0 ? String.format("%,d", result.total()) : "top";
+
+        sb.append(String.format("(%d of %s, %.1f ms)", result.hits().size(), total, result.tookMillis()));
+
+        return sb.toString();
+    }
+
+    private static void print(Hits result) {
+
+        System.out.println(format(result));
     }
 
     private static boolean isPhrase(String query) {
@@ -270,13 +310,11 @@ public class Main {
         return q.substring(1, q.length() - 1);
     }
 
-    private static void repl(SearchEngine engine, Map<String, Ranker> rankers,
-                             PhraseQueryExecutor phraseExecutor,
-                             BooleanQueryExecutor booleanExecutor) throws Exception {
+    private static void repl(SearchBackend backend) throws Exception {
 
-        ResultFormatter formatter = new ResultFormatter(engine);
+        String current = backend.defaultRanker();
 
-        String current = "tfidf";
+        int limit = DEFAULT_LIMIT;
 
         System.out.println("Interactive search. Type :help for commands, :quit to exit.");
 
@@ -314,7 +352,7 @@ public class Main {
 
                 if (line.equals(":rankers")) {
 
-                    System.out.println("Available rankers: " + String.join(", ", rankers.keySet()));
+                    System.out.println("Available rankers: " + String.join(", ", backend.rankers()));
 
                     continue;
                 }
@@ -323,7 +361,7 @@ public class Main {
 
                     String name = line.substring(":ranker ".length()).strip();
 
-                    if (rankers.containsKey(name)) {
+                    if (backend.rankers().contains(name)) {
 
                         current = name;
 
@@ -337,51 +375,73 @@ public class Main {
                     continue;
                 }
 
+                if (line.startsWith(":limit ")) {
+
+                    String value = line.substring(":limit ".length()).strip();
+
+                    if (value.matches("\\d+") && Integer.parseInt(value) > 0) {
+
+                        limit = Integer.parseInt(value);
+
+                        System.out.println("Showing up to " + limit + " results.");
+
+                    } else {
+
+                        System.out.println("Limit must be a positive number.");
+                    }
+
+                    continue;
+                }
+
                 if (line.startsWith(":bool ")) {
 
-                    runBoolean(engine, booleanExecutor, line.substring(":bool ".length()));
+                    runBoolean(backend, line.substring(":bool ".length()), limit);
 
                     continue;
                 }
 
                 if (line.startsWith(":save ")) {
 
-                    String file = line.substring(":save ".length()).strip();
-
-                    java.nio.file.Path path = java.nio.file.Path.of(file);
-
-                    if (file.endsWith(".gz")) {
-
-                        new IndexStore().saveCompressed(engine, path);
-
-                    } else {
-
-                        new IndexStore().save(engine, path);
-                    }
-
-                    System.out.println("Saved index to " + file + ".");
+                    save(backend, line.substring(":save ".length()).strip());
 
                     continue;
                 }
 
                 if (isPhrase(line)) {
 
-                    List<String> terms = engine.analyzeQuery(stripQuotes(line));
-
-                    SearchResult phraseResult = phraseExecutor.execute(new PhraseQuery(terms));
-
-                    System.out.println(formatter.format(phraseResult));
+                    print(backend.phrase(stripQuotes(line), limit));
 
                     continue;
                 }
 
-                SearchResult result = engine.search(line, rankers.get(current));
-
-                System.out.println(formatter.format(result));
+                print(backend.search(line, current, limit));
             }
         }
 
         System.out.println("Bye.");
+    }
+
+    private static void save(SearchBackend backend, String file) throws Exception {
+
+        if (!(backend instanceof MemorySearchBackend memory)) {
+
+            System.out.println(":save applies to in-memory indexes; a disk index is already persisted.");
+
+            return;
+        }
+
+        Path path = Path.of(file);
+
+        if (file.endsWith(".gz")) {
+
+            new IndexStore().saveCompressed(memory.engine(), path);
+
+        } else {
+
+            new IndexStore().save(memory.engine(), path);
+        }
+
+        System.out.println("Saved index to " + file + ".");
     }
 
     private static void printHelp() {
@@ -393,15 +453,17 @@ public class Main {
                   :bool <expr>    boolean search using AND / OR / NOT and ( )
                   :ranker <name>  switch ranking algorithm (tfidf, cosine, bm25)
                   :rankers        list available rankers
-                  :save <file>    persist the current index to disk (.gz = compressed)
+                  :limit <n>      number of results to show (default 10)
+                  :save <file>    persist an in-memory index to disk (.gz = compressed)
                   :help           show this help
                   :quit / :q      exit
 
                 Startup source flags (choose one, before any query):
+                  --index <dir>     search an on-disk index built with --build-index
                   --load <file>     rebuild the index from a saved snapshot
                   --html <folder>   index a folder of .html/.htm files
                   --crawl <url> [n] crawl up to n pages (default 25) from a seed URL
-                  --serve [port]    start the HTTP search API (default port 8080)
+                  --serve [port]    start the HTTP search API (default $PORT or 8080)
 
                 Build an on-disk index (for corpora larger than memory):
                   --build-index --out <dir> (--wiki <dump> | --folder <dir> | --html <dir>)

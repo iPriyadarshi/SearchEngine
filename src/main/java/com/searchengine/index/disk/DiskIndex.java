@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Read-only view of an index built by {@link DiskIndexWriter}.
@@ -29,6 +30,8 @@ import java.util.Properties;
 public class DiskIndex implements Closeable {
 
     private final Arena arena = Arena.ofShared();
+
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     private final MemorySegment dict;
 
@@ -241,6 +244,10 @@ public class DiskIndex implements Closeable {
     @Override
     public void close() {
 
-        arena.close();
+        // Idempotent: the server's shutdown hook and main's try-with-resources may both close it.
+        if (closed.compareAndSet(false, true)) {
+
+            arena.close();
+        }
     }
 }
