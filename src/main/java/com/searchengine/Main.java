@@ -66,6 +66,13 @@ public class Main {
             return;
         }
 
+        if (args.length > 0 && args[0].equals("--crawl-web")) {
+
+            CrawlCommand.run(Arrays.copyOfRange(args, 1, args.length));
+
+            return;
+        }
+
         if (args.length > 0 && args[0].equals("--fetch-cc")) {
 
             FetchCommand.run(Arrays.copyOfRange(args, 1, args.length));
@@ -483,6 +490,10 @@ public class Main {
                   --build-index --out <dir> (--corpus <dir> | --wiki <dump|dir>... | --warc <file|url>...
                                 | --cc <crawl> --cc-files n | --folder <dir> | --html <dir>)
                                 [--max-docs n] [--mem-mb n] [--threads n]
+
+                Crawl sites politely (robots.txt, 1 request/s per site) into a corpus (resumable):
+                  --crawl-web --seeds <tranco.csv|urls.txt> --corpus <dir> [--top n] [--skip k]
+                              [--sites-parallel p] [--pages-per-site m]
 
                 Download Common Crawl pages into a local corpus (resumable):
                   --fetch-cc --cc <crawl> --cc-files n [--cc-start k] --corpus <dir>
