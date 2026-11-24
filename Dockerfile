@@ -9,21 +9,23 @@ COPY src src
 RUN mvn -q -B package -DskipTests
 
 # ---- run ----
-FROM eclipse-temurin:26-jre
-RUN groupadd --system app && useradd --system --gid app --home /app app
+# Ubuntu-based JRE: ONNX Runtime's native library (semantic search) needs glibc.
+FROM eclipse-temurin:26-jre-noble
+RUN groupadd --system app && useradd --system --gid app --home /app app \
+    && mkdir -p /data /indexes /models && chown app:app /data /indexes
 WORKDIR /app
 COPY --from=build /src/target/searchengine.jar app.jar
 # Small sample corpus, served when no index is mounted.
 COPY data/raw data/raw
 
 USER app
-ENV PORT=8080
+ENV PORT=8080 \
+    EMBEDDING_MODEL_DIR=/models/bge-small-en-v1.5
 EXPOSE 8080
 
-# The disk index is memory-mapped, so it lives in the OS page cache rather than
-# the heap: keep the heap at half the container's memory and leave the rest for it.
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=50", "-jar", "app.jar"]
+# Disk indexes are memory-mapped, so they live in the OS page cache rather than
+# the heap: keep the heap well below the container's memory.
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=40", "-jar", "app.jar"]
 
-# Default: serve the bundled sample. To serve a prebuilt disk index instead:
-#   docker run -p 8080:8080 -v "$PWD/indexes/simplewiki:/index:ro" searchengine --index /index --serve
+# Default: serve the bundled sample. docker-compose.yml serves /indexes/current.
 CMD ["--serve"]

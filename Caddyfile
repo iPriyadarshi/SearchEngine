@@ -1,0 +1,12 @@
+# Caddy obtains and renews the HTTPS certificate for $DOMAIN automatically.
+# No access log is configured: searches are not recorded (see /about).
+{$DOMAIN} {
+	reverse_proxy search:8080 {
+		health_uri /health
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+}

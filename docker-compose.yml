@@ -1,0 +1,53 @@
+# Production stack: the search server behind Caddy (automatic HTTPS).
+# See DEPLOY.md. Set DOMAIN in .env (copy .env.example).
+#
+#   docker compose up -d --build            # serve
+#   docker compose run --rm tools --help    # crawl / fetch / build / embed jobs
+
+services:
+  search:
+    build: .
+    image: sift-search
+    restart: unless-stopped
+    command: ["--index", "/indexes/current", "--serve", "8080"]
+    environment:
+      TRUST_PROXY: "true"          # client IPs come from Caddy's X-Forwarded-For
+      RATE_LIMIT: "5"              # sustained searches per second per visitor
+      RATE_BURST: "30"
+    volumes:
+      - ./indexes:/indexes:ro
+      - ./data/models:/models:ro
+    expose:
+      - "8080"
+    stop_grace_period: 10s
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - search
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  # One-off jobs (not started by "up"): crawling, Common Crawl, index builds, embeddings.
+  tools:
+    image: sift-search
+    profiles: ["tools"]
+    working_dir: /work
+    volumes:
+      - ./data:/work/data
+      - ./indexes:/work/indexes
+      - ./eval:/work/eval:ro
+    entrypoint: ["java", "-XX:MaxRAMPercentage=70", "-jar", "/app/app.jar"]
+
+volumes:
+  caddy_data:
+  caddy_config:

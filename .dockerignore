@@ -1,6 +1,9 @@
 .git
 .idea
 target
+run
 indexes
-data/wiki
+# Large local data (dumps, corpora, models) is mounted at runtime, not baked in.
+data/*
+!data/raw
 *.iml

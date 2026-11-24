@@ -51,7 +51,18 @@ public final class SemanticSearcher implements Closeable {
 
         Properties settings = VectorStore.settings(indexDir);
 
-        Embedder embedder = Embedder.load(Path.of(settings.getProperty("model")), 2);
+        // The recorded path is where --embed ran; a container mounts the model
+        // elsewhere and names it with EMBEDDING_MODEL_DIR.
+        Path model = Path.of(settings.getProperty("model"));
+
+        String override = System.getenv("EMBEDDING_MODEL_DIR");
+
+        if (!java.nio.file.Files.exists(model.resolve("model.onnx")) && override != null) {
+
+            model = Path.of(override);
+        }
+
+        Embedder embedder = Embedder.load(model, 2);
 
         return new SemanticSearcher(embedder, VectorStore.load(indexDir));
     }
