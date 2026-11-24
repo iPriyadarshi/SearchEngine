@@ -14,16 +14,26 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
  * {@code --build-index}: streams a document source into an on-disk index.
  *
  * <pre>
- * --build-index --out &lt;dir&gt; (--wiki &lt;dump&gt; | --folder &lt;dir&gt; | --html &lt;dir&gt;)
+ * --build-index --out &lt;dir&gt; (--wiki &lt;dump|dir&gt;... | --folder &lt;dir&gt; | --html &lt;dir&gt;)
  *               [--max-docs n] [--mem-mb n] [--threads n]
  * </pre>
+ *
+ * {@code --wiki} may be repeated, and may name a directory: every
+ * {@code .bz2}/{@code .xml}/{@code .gz} dump in it is indexed in part order
+ * (e.g. the 27 {@code enwiki-...-multistreamN.xml-pA pB.bz2} part files).
  *
  * {@code --mem-mb} is the postings buffer budget before a segment is flushed
  * (default: a third of the max heap). {@code --threads} sizes both the
@@ -43,7 +53,7 @@ final class BuildIndexCommand {
 
         String html = null;
 
-        Path wikiDump = null;
+        List<Path> wikiDumps = new ArrayList<>();
 
         long maxDocs = Long.MAX_VALUE;
 
@@ -66,7 +76,7 @@ final class BuildIndexCommand {
 
                 case "--out" -> out = Path.of(value);
 
-                case "--wiki" -> wikiDump = Path.of(value);
+                case "--wiki" -> wikiDumps.addAll(dumpFiles(Path.of(value)));
 
                 case "--folder" -> folder = value;
 
@@ -82,7 +92,7 @@ final class BuildIndexCommand {
             }
         }
 
-        if (out == null || (wikiDump == null && folder == null && html == null)) {
+        if (out == null || (wikiDumps.isEmpty() && folder == null && html == null)) {
 
             throw usage("--out and one source (--wiki, --folder, --html) are required");
         }
@@ -96,15 +106,12 @@ final class BuildIndexCommand {
 
         try (DiskIndexWriter writer = new DiskIndexWriter(out, parser, memoryBudget, System.out::println)) {
 
-            if (wikiDump != null) {
+            if (!wikiDumps.isEmpty()) {
 
                 // Cleaning wikitext is the expensive per-page step, so it runs on the workers.
-                WikipediaDumpSource source = new WikipediaDumpSource(wikiDump, Long.MAX_VALUE, threads);
+                try (DumpSequence pages = new DumpSequence(wikiDumps, threads)) {
 
-                try (Stream<WikiPage> pages = source.rawPages()) {
-
-                    ParallelIndexer.index(pages.iterator(), WikipediaDumpSource::toDocument,
-                            parser, writer, threads, maxDocs);
+                    ParallelIndexer.index(pages, WikipediaDumpSource::toDocument, parser, writer, threads, maxDocs);
                 }
 
             } else {
@@ -128,6 +135,119 @@ final class BuildIndexCommand {
                 (System.nanoTime() - start) / 1e9, directorySize(out) >> 20);
     }
 
+    /**
+     * A dump file, or every dump in a directory sorted by part number.
+     */
+    static List<Path> dumpFiles(Path path) throws IOException {
+
+        if (!Files.isDirectory(path)) {
+
+            return List.of(path);
+        }
+
+        try (Stream<Path> files = Files.list(path)) {
+
+            List<Path> dumps = files
+                    .filter(p -> p.getFileName().toString().matches(".*\\.(bz2|xml|gz)$"))
+                    .sorted(Comparator.comparing(BuildIndexCommand::partOrder).thenComparing(Path::toString))
+                    .toList();
+
+            if (dumps.isEmpty()) {
+
+                throw usage("no dump files (.bz2/.xml/.gz) in " + path);
+            }
+
+            return dumps;
+        }
+    }
+
+    /**
+     * Sort key for "...multistream12.xml-p7054860p8554859.bz2": (12, 7054860).
+     */
+    private static long partOrder(Path path) {
+
+        Matcher m = PART.matcher(path.getFileName().toString());
+
+        return m.find() ? Long.parseLong(m.group(1)) * 1_000_000_000_000L + Long.parseLong(m.group(2)) : Long.MAX_VALUE;
+    }
+
+    private static final Pattern PART = Pattern.compile("(\\d+)\\.xml-p(\\d+)");
+
+    /**
+     * Iterates the pages of several dumps back to back, opening each file only
+     * when the previous one is exhausted.
+     */
+    private static final class DumpSequence implements Iterator<WikiPage>, AutoCloseable {
+
+        private final Iterator<Path> files;
+
+        private final int threads;
+
+        private Stream<WikiPage> current;
+
+        private Iterator<WikiPage> pages = java.util.Collections.emptyIterator();
+
+        DumpSequence(List<Path> files, int threads) {
+
+            this.files = files.iterator();
+
+            this.threads = threads;
+        }
+
+        @Override
+        public boolean hasNext() {
+
+            while (!pages.hasNext()) {
+
+                close();
+
+                if (!files.hasNext()) {
+
+                    return false;
+                }
+
+                Path file = files.next();
+
+                System.out.println("  reading " + file.getFileName());
+
+                try {
+
+                    current = new WikipediaDumpSource(file, Long.MAX_VALUE, threads).rawPages();
+
+                } catch (IOException e) {
+
+                    throw new UncheckedIOException(e);
+                }
+
+                pages = current.iterator();
+            }
+
+            return true;
+        }
+
+        @Override
+        public WikiPage next() {
+
+            if (!hasNext()) {
+
+                throw new java.util.NoSuchElementException();
+            }
+
+            return pages.next();
+        }
+
+        @Override
+        public void close() {
+
+            if (current != null) {
+
+                current.close();
+
+                current = null;
+            }
+        }
+    }
+
     private static long directorySize(Path dir) throws IOException {
 
         try (Stream<Path> files = Files.list(dir)) {
@@ -149,7 +269,7 @@ final class BuildIndexCommand {
     private static IllegalArgumentException usage(String problem) {
 
         return new IllegalArgumentException(problem + System.lineSeparator()
-                + "usage: --build-index --out <dir> (--wiki <dump> | --folder <dir> | --html <dir>)"
+                + "usage: --build-index --out <dir> (--wiki <dump|dir>... | --folder <dir> | --html <dir>)"
                 + " [--max-docs n] [--mem-mb n] [--threads n]");
     }
 }

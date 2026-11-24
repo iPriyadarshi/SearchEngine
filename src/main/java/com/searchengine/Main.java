@@ -66,6 +66,13 @@ public class Main {
             return;
         }
 
+        if (args.length > 0 && args[0].equals("--bench")) {
+
+            BenchmarkCommand.run(Arrays.copyOfRange(args, 1, args.length));
+
+            return;
+        }
+
         SearchBackend backend;
 
         // Source-selection flags consume their arguments; anything left over is
@@ -466,7 +473,10 @@ public class Main {
                   --serve [port]    start the HTTP search API (default $PORT or 8080)
 
                 Build an on-disk index (for corpora larger than memory):
-                  --build-index --out <dir> (--wiki <dump> | --folder <dir> | --html <dir>)
-                                [--max-docs n] [--mem-mb n] [--threads n]""");
+                  --build-index --out <dir> (--wiki <dump|dir>... | --folder <dir> | --html <dir>)
+                                [--max-docs n] [--mem-mb n] [--threads n]
+
+                Benchmark query latency on an on-disk index:
+                  --bench --index <dir> [--queries n] [--threads n] [--k n]""");
     }
 }
